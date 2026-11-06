@@ -2,7 +2,7 @@
   "name": "dsh-weneed-plugin",
   "version": "0.5.0",
   "type": "module",
-  "description": "DSH WeNeed Plugin: 728/728 WeNeed assistant seed for DeepSeek Flash in DeepSeek Harness.",
+  "description": "DSH WeNeed 插件：在 DeepSeek Harness 中为 DeepSeek Flash 注入 728/728 WeNeed assistant seed；仅适用于 DSH。",
   "license": "MIT",
   "author": "DSH WeNeed Plugin contributors",
   "repository": {
