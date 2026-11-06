@@ -1,22 +1,23 @@
 {
-  "name": "weneed-native-seed",
-  "version": "0.4.0",
+  "name": "dsh-weneed-plugin",
+  "version": "0.5.0",
   "type": "module",
-  "description": "WeNeed 728/728 assistant seed for DeepSeek Flash models in DeepSeek Harness.",
+  "description": "DSH WeNeed Plugin: 728/728 WeNeed assistant seed for DeepSeek Flash in DeepSeek Harness.",
   "license": "MIT",
-  "author": "WeNeed Native Seed contributors",
+  "author": "DSH WeNeed Plugin contributors",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Lichadai/weneed-native-seed.git"
+    "url": "git+https://github.com/Lichadai/dsh-weneed-plugin.git"
   },
-  "homepage": "https://github.com/Lichadai/weneed-native-seed#readme",
+  "homepage": "https://github.com/Lichadai/dsh-weneed-plugin#readme",
   "bugs": {
-    "url": "https://github.com/Lichadai/weneed-native-seed/issues"
+    "url": "https://github.com/Lichadai/dsh-weneed-plugin/issues"
   },
   "keywords": [
     "dsh-plugin",
     "deepseek-harness",
     "weneed",
+    "we-need",
     "deepseek",
     "seed"
   ],

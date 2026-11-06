@@ -1,8 +1,64 @@
-# WeNeed Native Seed
+# DSH WeNeed Plugin
 
-DeepSeek Harness（DSH）Host 插件：在模型请求的最后一条真实 user task 之前，插入一条 **728/728** 的 WeNeed assistant seed，让 DeepSeek Flash 更容易进入 `We need / Let's / Need` 的思维语态。
+DeepSeek Harness（DSH）Host 插件：在模型请求的最后一条真实 user task 之前，插入一条 **728/728** 的 WeNeed assistant seed，让 DeepSeek Flash 更容易进入 `We need / Let's / We / Should` 的思维风格。
 
 > 这是概率性引导，不是硬开关。它提高触发概率，但不保证每一次都进入 WeNeed 寄存器。
+
+---
+
+## 0. 先看这个
+
+### 0.1 WeNeed 不是某一个模型，而是一类思维风格
+
+WeNeed 不是 DeepSeek 独有的私有开关，也不是只能由某一家模型产生。它是一类以 **`We need`、`Let's`、`We`、`Should`** 作为句子开头为主要特征的思维风格：
+
+```text
+We need understand the task...
+Need inspect the inputs...
+Let's plan before acting...
+Should verify against the requirement...
+```
+
+这种风格通常有三个特征：
+
+- 注意力比较稳；
+- 愿意连续调用工具推进任务；
+- 很少陷入“雷霆大思考”——反复检查、反复自我修正、纠结细节。
+
+一旦句子里大量出现 **`I`、`Let me`、`I will`**，通常说明模型的思维力被过多的混杂信息冲散了，开始从“推进任务”退化成“围着细节打转”。
+
+### 0.2 三个最常见的干扰源
+
+实际使用 DeepSeek 时，最容易把注意力冲散的是三类信息：
+
+1. **工具信息过大**：工具 schema、工具调用历史、工具结果太多；
+2. **工作区文件夹混杂**：长期在一个大目录里工作，项目多、文件多、临时文件多；
+3. **skill 信息过大**：skill catalog 很长，或加载了很长的 skill 正文。
+
+这些信息本身不是没用，但一旦过于庞大，就会把模型拉到细节里，失去对大局和任务清单的把控。表现就是“雷霆大思考”：反复读、反复比、反复改，迟迟不推进。
+
+一个很实际的印证：
+
+- 以 `Let me` 为主的涣散思维，完成任务时经常不知道自己该更新任务清单；
+- 以 `We need / Let's` 为主的 WeNeed 模式，通常会主动完成任务，并知道更新任务清单；
+- 但即使是 WeNeed 模式，有时也会忘记更新任务清单——这往往说明上下文里无意义、与思维不相关的混杂信息太多，已经影响了思维力和注意力。
+
+### 0.3 使用 DeepSeek 的建议
+
+- 工作区保持干净，项目尽量少；及时清空不必要的文件夹、临时文件和旧项目。
+- 工具调用时间往后延：在 skill 目录不是特别大时，先让模型读 skill、做规划，最后再调用工具。不要让庞大的工具基座信息先冲散思维。
+- 工具很多、文件夹很杂、skill 很长时，优先清理上下文；不要只依赖 seed。
+- 出现 `Let me`、`I`、`I will` 时，先怀疑工具调用过多，或信息获取不当、过大；不要只怪模型。
+
+### 0.4 适用边界：只适用于 DeepSeek Harness
+
+本插件只针对 **DeepSeek Harness**。
+
+测试过 Qoder：Qoder 在使用第三方 API 时，`reasoning_content` 不回传。上下文内容还在，但思维过程会丢失，所以同样的 seed 在 Qoder 上不能稳定生效。
+
+那种情况只能走代理/镜像路线：把上下文里的内容克隆到思维字段里，让思维链不中断。这是另一条技术路线，不在本插件的范围内。
+
+补丁说明：作者不是专业编程人员，对 reasoning 回传的底层机理可能理解不完整，也可能没有找到 Qoder 正确的回传方式，因此上面的判断可能是误判。如果 Qoder 后续版本提供了 reasoning 回传能力，请以实际版本为准。
 
 ---
 
@@ -223,20 +279,20 @@ models:
 ### npm
 
 ```sh
-dsh plugin --profile desktop add weneed-native-seed@0.4.0
+dsh plugin --profile desktop add dsh-weneed-plugin@0.5.0
 ```
 
 ### tarball
 
 ```sh
 npm pack
-dsh plugin --profile desktop add ./weneed-native-seed-0.4.0.tgz
+dsh plugin --profile desktop add ./dsh-weneed-plugin-0.5.0.tgz
 ```
 
 ### GitHub
 
 ```sh
-dsh plugin --profile desktop add github:<account>/weneed-native-seed#<commit>
+dsh plugin --profile desktop add github:Lichadai/dsh-weneed-plugin#<commit>
 ```
 
 安装后完全重启 DSH。`restart-required` 表示已安装但还没激活。
@@ -545,8 +601,8 @@ dsh --profile desktop --dump-config
 应出现：
 
 ```text
-# == weneed-native-seed
-- id: weneed-native-seed
+# == dsh-weneed-plugin
+- id: dsh-weneed-plugin
 ```
 
 ### 没有注入
@@ -586,15 +642,15 @@ npm pack
 产物：
 
 ```text
-weneed-native-seed-0.4.0.tgz
+dsh-weneed-plugin-0.5.0.tgz
 ```
 
 GitHub Release：
 
 ```sh
-git tag v0.4.0
-git push origin v0.4.0
-gh release create v0.4.0 ./weneed-native-seed-0.4.0.tgz --generate-notes
+git tag v0.5.0
+git push origin v0.5.0
+gh release create v0.5.0 ./dsh-weneed-plugin-0.5.0.tgz --generate-notes
 ```
 
 npm：
@@ -616,7 +672,7 @@ GitHub topic: dsh-plugin
 ## 16. 文件结构
 
 ```text
-weneed-native-seed/
+dsh-weneed-plugin/
   package.json          # name/version/files/engines/dsh.bundle
   cordis.patch.yml      # plugin row + targetRules + interceptModels
   index.js              # injectSeed + isTarget + configFor + llm/stream

@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto';
 const SEED = readFileSync(new URL('./seed.txt', import.meta.url), 'utf8').trim();
 const SEED_BYTES = Buffer.byteLength(SEED);
 if (SEED.length !== 728 || SEED_BYTES !== 728) {
-  throw new Error(`weneed-native-seed: seed must be 728/728, got ${SEED.length}/${SEED_BYTES}`);
+  throw new Error(`dsh-weneed-plugin: seed must be 728/728, got ${SEED.length}/${SEED_BYTES}`);
 }
 
 const DEFAULT_TARGET_RULES = [['deepseek', 'flash']];
@@ -579,7 +579,7 @@ class WeNeedNativeAdapter {
 
 }
 
-export const name = 'weneed-native-seed';
+export const name = 'dsh-weneed-plugin';
 export const inject = ['llm'];
 export { injectSeed, isCompactionRequest, isTarget, DEFAULT_TARGET_RULES, WeNeedNativeAdapter };
 

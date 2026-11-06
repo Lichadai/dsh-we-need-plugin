@@ -1,75 +1,81 @@
-# Publishing
+# 发布说明
 
-This document is for maintainers. The normal user install path is in `README.md`.
+这是维护者文档。普通用户的安装方式见 `README.md`。
 
-## One-time login
+## 一次登录
 
-Only one interactive login is needed. Do not paste a token into chat, an issue, or a commit.
+只需要一次交互式登录。不要把 token 贴到聊天、Issue 或 commit 里。
 
 ```sh
 gh auth login
 gh auth status
 ```
 
-`gh` stores the login in its own hosts file. The release commands below reuse it.
+`gh` 会把登录保存在自己的 hosts 文件里，下面的命令直接复用它。
 
-## Prepare
+## 准备
 
 ```sh
 npm test
 npm pack
 ```
 
-The tarball is `weneed-native-seed-0.4.0.tgz`.
+产物：
 
-## Create the repository and push
+```text
+dsh-weneed-plugin-0.5.0.tgz
+```
+
+## 创建仓库并推送
 
 ```sh
 git init
-git config user.name "WeNeed Native Seed"
+git config user.name "DSH WeNeed Plugin"
 git config user.email "<id>+<login>@users.noreply.github.com"
 git add .
-git commit -m "release: weneed-native-seed 0.4.0"
-gh repo create <account>/weneed-native-seed --public --source=. --remote=origin --push
+git commit -m "release: dsh-weneed-plugin 0.5.0"
+gh repo create Lichadai/dsh-weneed-plugin --public --source=. --remote=origin --push
 ```
 
-Use GitHub's noreply address for the commit email. Do not use a private email address.
+使用 GitHub 的 noreply 邮箱，不要使用私人邮箱。
 
-## Create the release
+如果 `git push` 被网络重置，可以改用 GitHub Git Data API 上传文件、commit、tag 和 Release；本项目的上传脚本是 `tools/publish-release-api.mjs`。
+
+## 创建 Release
 
 ```sh
-git tag v0.4.0
-git push origin v0.4.0
-gh release create v0.4.0 ./weneed-native-seed-0.4.0.tgz --generate-notes
+git tag v0.5.0
+git push origin v0.5.0
+gh release create v0.5.0 ./dsh-weneed-plugin-0.5.0.tgz --generate-notes
 ```
 
-The GitHub Actions workflow also creates a release on tag pushes. Running the command manually is optional if the workflow is enabled.
+GitHub Actions 也会在 tag push 时创建 Release；手动命令是可选的。
 
-## npm (optional)
+## npm（可选）
 
 ```sh
 npm login
 npm publish --access public
 ```
 
-Requires an npm account and a public package name. The package is already named `weneed-native-seed` and has `publishConfig.access: public`.
+需要 npm 账号。包名是 `dsh-weneed-plugin`，`publishConfig.access` 已经是 `public`。
 
-## Plugin discovery
+## 插件发现
 
-- Add the GitHub topic `dsh-plugin`.
-- Keep `dsh-plugin` and `deepseek-harness` in `package.json` keywords.
-- Optional: publish a DSH plugin index JSON on GitHub Pages or another HTTPS host.
+- GitHub 仓库加 `dsh-plugin` topic；
+- `package.json` 保留 `dsh-plugin`、`deepseek-harness` 关键词；
+- 可选：把 DSH 插件索引 JSON 放到 GitHub Pages 或其他 HTTPS 静态主机。
 
-## Privacy check before pushing
+## 推送前隐私检查
 
 ```sh
 git status
 git diff --cached
 ```
 
-Confirm that the repository does not contain:
+确认仓库不包含：
 
-- `.env`, `.credentials.yaml`, tokens, cookies;
-- DSH session logs or request captures;
-- local absolute paths;
-- reports, backups, `node_modules`, or `.tgz` files.
+- `.env`、`.credentials.yaml`、token、cookie；
+- DSH 会话日志或请求捕获；
+- 本机绝对路径；
+- reports、backups、`node_modules`、`.tgz`。

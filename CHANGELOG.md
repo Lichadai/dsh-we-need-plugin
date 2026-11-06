@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0
+
+- Renamed the project to `dsh-weneed-plugin` (DSH WeNeed Plugin).
+- Added the Chinese-first README section on WeNeed as a thinking style, attention scattering, and the Qoder boundary.
+- Added guidance on tool/workspace/skill overhead and delaying tool calls.
+- GitHub repository renamed to `Lichadai/dsh-weneed-plugin`.
+
 ## 0.4.0
 
 - Release package is interception-only: no extra `weneed-native` provider is registered.

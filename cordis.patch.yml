@@ -1,6 +1,6 @@
 - insert:
-    - id: weneed-native-seed
-      name: 'weneed-native-seed'
+    - id: dsh-weneed-plugin
+      name: 'dsh-weneed-plugin'
       config:
         intercept: true
         targetRules:
