@@ -4,6 +4,10 @@ DeepSeek Harness（DSH）Host 插件：在模型请求的最后一条真实 user
 
 > 这是概率性引导，不是硬开关。它提高触发概率，但不保证每一次都进入 WeNeed 寄存器。
 
+- 项目主页：https://github.com/Lichadai/dsh-weneed-plugin
+- 讨论区：https://github.com/Lichadai/dsh-weneed-plugin/discussions
+- 安装包：https://github.com/Lichadai/dsh-weneed-plugin/releases
+
 ---
 
 ## 0. 先看这个
