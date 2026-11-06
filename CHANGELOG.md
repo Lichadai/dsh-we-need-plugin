@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.0
+
+- Provider-agnostic release: no `interceptModels` route is required; matched requests are delegated back to the original provider adapter with the modified messages.
+- Matching now uses the upstream model id only by default (`matchName: false`); display names are not read unless explicitly enabled.
+- Added `ctx.llm.prepareCall` + `prepared.stream` delegation with a recursion guard.
+- Added package-integrity checks for `seed.txt`, `cordis.patch.yml`, locales, README seed, and tarball file list.
+
 ## 0.6.0
 
 - Renamed the project/package to `dsh-we-need-plugin` (DSH We Need Plugin); the hyphen separates We and need for readability.

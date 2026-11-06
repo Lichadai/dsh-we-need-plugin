@@ -8,7 +8,14 @@
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
-const SEED = readFileSync(new URL('./seed.txt', import.meta.url), 'utf8').trim();
+const SEED_URL = new URL('./seed.txt', import.meta.url);
+let seedText;
+try {
+  seedText = readFileSync(SEED_URL, 'utf8');
+} catch (error) {
+  throw new Error(`dsh-we-need-plugin: cannot read ${SEED_URL.href}; seed.txt must be shipped next to index.js (${error.message})`);
+}
+const SEED = seedText.replace(/^\uFEFF/, '').trim();
 const SEED_BYTES = Buffer.byteLength(SEED);
 if (SEED.length !== 728 || SEED_BYTES !== 728) {
   throw new Error(`dsh-we-need-plugin: seed must be 728/728, got ${SEED.length}/${SEED_BYTES}`);
@@ -141,9 +148,9 @@ function isToolStepAfterContexts(messages) {
   return false;
 }
 
-function isTarget(modelId, modelName, target, rules = DEFAULT_TARGET_RULES) {
+function isTarget(modelId, modelName, target, rules = DEFAULT_TARGET_RULES, matchName = false) {
   if (target === false) return false;
-  const text = `${modelId ?? ''} ${modelName ?? ''}`.toLowerCase();
+  const text = `${modelId ?? ''}${matchName ? ` ${modelName ?? ''}` : ''}`.toLowerCase();
   const groups = Array.isArray(rules) && rules.length > 0 ? rules : DEFAULT_TARGET_RULES;
   return groups.some((terms) => Array.isArray(terms)
     && terms.length > 0
@@ -261,7 +268,7 @@ function seedMessage(provider, model) {
   };
 }
 
-function injectSeed(messages, options, modelConfig, targetRules = DEFAULT_TARGET_RULES) {
+function injectSeed(messages, options, modelConfig, targetRules = DEFAULT_TARGET_RULES, matchName = false) {
   const cleaned = messages.filter((message) => !isSeed(message));
   if (isCompactionRequest(cleaned)) {
     return { messages: cleaned, injected: false, reason: 'compaction-request' };
@@ -277,7 +284,7 @@ function injectSeed(messages, options, modelConfig, targetRules = DEFAULT_TARGET
   }
   const taskIndex = lastRealUserIndex(cleaned);
   if (taskIndex < 0) return { messages: cleaned, injected: false, reason: 'no-user-task' };
-  if (!isTarget(options.model, modelConfig?.name, modelConfig?.target, targetRules)) {
+  if (!isTarget(options.model, modelConfig?.name, modelConfig?.target, targetRules, matchName)) {
     return { messages: cleaned, injected: false, reason: 'not-target' };
   }
   const task = cleaned[taskIndex];
@@ -421,7 +428,7 @@ class WeNeedNativeAdapter {
   async *stream(options) {
     const modelConfig = this.configFor(options.provider, options.model) ?? {};
     const filtered = filterSkillCatalog(options.messages ?? []);
-    const { messages, injected, reason } = injectSeed(filtered, options, modelConfig, this.config.targetRules);
+    const { messages, injected, reason } = injectSeed(filtered, options, modelConfig, this.config.targetRules, this.config.matchName === true);
     const wire = messages.map(wireMessage).filter(Boolean);
     const tools = Array.isArray(options.tools) ? options.tools : [];
     const body = {
@@ -601,16 +608,50 @@ export function apply(ctx, config = {}) {
   }
   if (config.intercept !== false) {
     ctx.on('llm/stream', async function* (options, next) {
+      if (options.__weneedBypass === true) {
+        yield* next();
+        return;
+      }
       if (options.provider === adapter.provider || options.purpose !== undefined) {
         yield* next();
         return;
       }
       const modelConfig = adapter.configFor(options.provider, options.model);
-      if (modelConfig !== undefined && isTarget(options.model, modelConfig.name, modelConfig.target, config.targetRules)) {
+      const modelName = modelConfig?.name ?? '';
+      if (!isTarget(options.model, modelName, modelConfig?.target, config.targetRules, config.matchName === true)) {
+        yield* next();
+        return;
+      }
+      if (modelConfig !== undefined) {
         yield* adapter.stream(options);
         return;
       }
-      yield* next();
+      const filtered = filterSkillCatalog(options.messages ?? []);
+      const injected = injectSeed(filtered, options, {}, config.targetRules, config.matchName === true);
+      if (!injected.injected || typeof ctx.llm?.prepareCall !== 'function') {
+        yield* next();
+        return;
+      }
+      let prepared;
+      try {
+        prepared = await ctx.llm.prepareCall({
+          provider: options.provider,
+          model: options.model,
+          ...(options.reasoningEffort === undefined ? {} : { reasoningEffort: options.reasoningEffort }),
+          ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
+          ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),
+          ...(options.stop === undefined ? {} : { stop: options.stop }),
+        }, options.signal);
+      } catch {
+        yield* next();
+        return;
+      }
+      yield* prepared.stream({
+        ...options,
+        ...prepared.config,
+        messages: injected.messages,
+        __weneedBypass: true,
+      });
     }, { global: true });
   }
 }

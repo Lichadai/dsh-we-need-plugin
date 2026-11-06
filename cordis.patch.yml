@@ -3,21 +3,6 @@
       name: 'dsh-we-need-plugin'
       config:
         intercept: true
+        matchName: false
         targetRules:
           - [deepseek, flash]
-        interceptModels:
-          - provider: opendesign
-            id: deepseek-v4.1-flash
-            name: DeepSeek-V4.1-Flash
-            contextWindow: 1000000
-            maxTokens: 300000
-            baseURL: https://amr-link.open-design.ai/v1
-            apiKeyEnv: OPENDESIGN_API_KEY
-            streamOptions: false
-          - provider: baicai
-            id: deepseek-v4.1-flash-1017
-            name: DeepSeek-V4.1-Flash-1017
-            contextWindow: 1024000
-            maxTokens: 32000
-            baseURL: https://sharellm.net/v1
-            apiKeyEnv: BAICAI_API_KEY

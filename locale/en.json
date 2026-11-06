@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "DSH We Need Plugin",
-    "description": "Default filter: DeepSeek + Flash. Injects the 728/728 WeNeed seed before new user tasks. Read the README 'Usage tips' first: delay tool calls, think and plan before acting."
+    "description": "Default filter: DeepSeek + Flash in the upstream model id (any provider). Injects the 728/728 WeNeed seed before new user tasks. Read the README 'Usage tips' first: delay tool calls, think and plan before acting."
   }
 }

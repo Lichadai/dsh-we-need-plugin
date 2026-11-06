@@ -17,6 +17,7 @@ jobs:
         with:
           node-version: 22
       - run: npm test
+      - run: npm run test:package
       - run: npm pack
       - name: Create or update GitHub release
         env:

@@ -17,7 +17,8 @@ DeepSeek Harness（DSH）Host 插件：在模型请求的最后一条真实 user
 ## 先读（30 秒）
 
 1. **使用技巧**：工具尽量后调用；先分析问题、做计划，不要急着写文件或调用工具；可以先读 skill，但不要过早调用工具。详见 [0.5 使用技巧](#05-使用技巧先读这个)。
-2. **模型筛选**：只有模型 id 与配置的显示名拼起来后同时出现 `deepseek` 和 `flash`（大小写不敏感），并且该 provider/model 在 `interceptModels` 里有路由时，插件才会生效。详见 [0.6 模型筛选规则](#06-模型筛选规则什么时候生效)。
+2. **模型筛选**：只看发给上游的 model id（DSH 传给 provider 的 `model`）是否同时包含 `deepseek` 和 `flash`，大小写不敏感；provider 完全不参与，也不需要配置 provider 路由。默认不读界面显示名。详见 [0.6 模型筛选规则](#06-模型筛选规则什么时候生效)。
+3. **怎么工作**：命中后插件把带 seed 的 messages 交回 DSH 原来的 provider adapter，provider、baseURL、API key 都沿用原来的，所以任何供货商都行。详见 [0.7 它怎么工作](#07-它怎么工作provider-不限)。
 
 ---
 
@@ -109,47 +110,67 @@ Should verify against the requirement...
 
 ### 0.6 模型筛选规则：什么时候生效
 
-代码位置：`index.js` → `isTarget()` 和 `WeNeedNativeAdapter.configFor()`。
+代码位置：`index.js` → `isTarget()`。
 
-匹配文本是：
+匹配文本默认只有：
 
 ```js
-const text = `${modelId ?? ''} ${modelName ?? ''}`.toLowerCase();
+const text = String(modelId ?? '').toLowerCase();
 ```
 
-- `modelId` 是 DSH 选中的真实 model id（`options.model`）；
-- `modelName` 是 `interceptModels[].name`，也就是插件配置里的显示名；
-- 两者会拼在一起匹配，所以 **真实 id 或配置的显示名，任意一个包含所需词都可以**；
-- 插件不会自动读取 DSH 自己的模型显示名；如果模型 id 是 opaque 的，就把显示名写进 `interceptModels[].name`；
-- provider 名称不参与匹配；
+- `modelId` 是 DSH 传给 provider 的 model id，也就是请求里的 `model` 字段；我们的自定义 adapter 会原样写入 `body.model`，delegated 模式也保留它；
+- **不是 UI 上看到的显示名**；
+- 只有显式 `matchName: true` 时，才把 `interceptModels[].name` 拼进来；
+- provider 名称完全不参与匹配；
 - 默认 `targetRules: [deepseek, flash]`，两个词必须同时出现；
 - 大小写不敏感。
 
 真正生效要同时满足：
 
 ```text
-1. 模型 id + 配置显示名命中 targetRules；
-2. 该 provider/model 在 interceptModels 里有精确路由；
-3. 不是插件自己的 provider，且 purpose 为空；
-4. 不是 tool step、压缩请求、标题/建议调用；
-5. target 没有被设成 false。
+1. model id（或显式 matchName 时的 name）命中 targetRules；
+2. 不是插件自己的 provider，且 purpose 为空；
+3. 不是 tool step、压缩请求、标题/建议调用；
+4. target 没有被设成 false；
+5. DSH 有 ctx.llm.prepareCall（当前版本有）。
 ```
 
-没有 `interceptModels` 路由时，请求原样 `next()`，不会注入。
+**不需要** `interceptModels` 路由，也不需要按 provider 配置 baseURL/key。没有路由时走 delegated 模式，见 0.7。
 
 例子：
 
-- `deepseek-v4.1-flash`，route name `DeepSeek-V4.1-Flash`：id 和 name 都含 `deepseek` / `flash`，命中；
-- `d4/deepseek-v4.1-flash-1017` 但没配 d4 路由：不注入，原样透传；
-- model id 是 `model-x`，route name 是 `DeepSeek-V4.1-Flash`：命中，因为配置的显示名含两个词。
+- `deepseek-v4.1-flash`：id 含两个词，命中；
+- `d4/deepseek-v4.1-flash-1017`：即使没配 d4 路由，也命中；
+- `vendor-alias`，显示名 `DeepSeek-V4.1-Flash`：默认 `matchName: false`，不命中；显式 `matchName: true` 并配置 name 后才命中；
+- `deepseek-v4-pro`：没有 `flash`，不命中。
 
 怎么改：
 
 - 只改识别范围：改 `targetRules`；
-- 改某个 provider 的实际走向：改 `interceptModels` 的 `provider` / `id` / `name` / `baseURL` / `apiKeyEnv`；
-- 只想让某个 provider 生效：只给它配路由，别的 provider 没路由就透传；
-- 想让多个 provider 生效：每个 provider 配一条路由；
+- 默认不要改 provider；任何 provider 都走原 adapter；
+- 如果模型 id 是 opaque、只有显示名可读：当前版本需要高级自定义路由（`matchName: true` + 完整 `interceptModels` 路由），见 10.8；默认不靠显示名；
+- 想让插件自己发 HTTP、精确控制字段顺序：才需要 `interceptModels` 路由（高级选项，见第 8/9 节）；
 - 未来模型（4.1 Pro、Kimi K3.1 等）的写法见第 10 节。
+
+### 0.7 它怎么工作（provider 不限）
+
+默认发布包不注册 provider，也没有 `interceptModels` 路由。命中模型 id 后：
+
+```text
+1. 过滤 skill catalog；
+2. 在最后一条真实 user task 前插入 assistant seed；
+3. ctx.llm.prepareCall(provider, model, controls) 取得原 provider 的调用句柄；
+4. prepared.stream({ ...原 options, ...prepared.config, messages: 注入后的 messages, __weneedBypass: true })；
+5. 原 provider adapter 用原来的 baseURL / key / 协议发请求；
+6. __weneedBypass 防止再次进入本插件，避免递归。
+```
+
+所以：
+
+- 任何 provider 都可以用，不需要提前知道供货商；
+- API key、baseURL、模型别名都沿用 DSH 原来的配置；
+- 插件只需要模型 id 里有 `deepseek` 和 `flash`；
+- delegated 模式使用原 adapter 的序列化，字段顺序由原 provider 决定；如果要严格的 DSH 自定义 wire 字段契约，才使用可选的 `interceptModels` 路由。
 
 ---
 
@@ -198,9 +219,9 @@ Need check...
 - 在 `llm/stream` 层拦截目标模型请求；
 - 在最后一条真实 user task 前插入 1 条 assistant seed；
 - 同时写 `content` 和 `reasoning_content`，各 728 字符 / 728 字节；
-- 保持 DSH 的工具步字段契约：`content=""`、`tool_calls` 无 `index`、tool pair 完整；
+- 自定义 adapter 路线保持 DSH 的工具步字段契约：`content=""`、`tool_calls` 无 `index`、tool pair 完整；delegated 路线保持原 adapter 行为；
 - 旧 seed 先剥离，再插新的，请求内最多 1 条；
-- 不需要新增 provider，不需要在模型选择器里多选一个“中间商”。
+- 不需要新增 provider，也不需要按 provider 配路由；任何 provider 只要模型 id 命中就生效。
 
 不做：
 
@@ -220,11 +241,11 @@ DSH agent loop
   → 组装 system / runtime / skill / time / task / history
   → 发出 GenerateOptions
   → llm/stream waterfall
-       → 插件检查 provider/model
-       → 命中 targetRules 且 interceptModels 有路由
-       → 插件用自己的 OpenAI-compatible adapter 发请求
-       → 在 task 前插入 assistant seed
-       → 解析 SSE，按 DSH StreamChunk 返回
+       → 插件只看 options.model（不看 provider）
+       → 命中 targetRules：在 task 前插入 assistant seed
+       → 有 interceptModels 路由？
+            是 → 插件用自己的 OpenAI-compatible adapter 发请求
+            否 → ctx.llm.prepareCall + prepared.stream 交回原 provider adapter
   → DSH 继续工具循环
 ```
 
@@ -253,13 +274,21 @@ assistant:
 - 两边同文，避免模型只看到“回答”而没看到“思考”，或反过来；
 - seed 只存在于本次请求，不写回会话。
 
-seed 文本在 `seed.txt`，加载时校验：
+seed 文本在 `seed.txt`，`index.js` 用：
+
+```js
+new URL('./seed.txt', import.meta.url)
+```
+
+读取，所以 npm tarball、GitHub Release tarball、GitHub 源码安装、本地目录安装都会从 **index.js 旁边的 seed.txt** 取文件。`seed.txt` 已列在 `package.json.files`，并加了 `exports["./seed.txt"]`；不要只复制 `index.js`，否则会找不到 seed。
+
+加载时会去掉 BOM、trim，并校验：
 
 ```js
 if (SEED.length !== 728 || SEED_BYTES !== 728) throw ...
 ```
 
-不要随便改 seed 长度；如果必须改，同步修改校验和测试。
+不要随便改 seed 长度；如果必须改，同步修改校验和测试。`npm run test:package` 会检查 seed 是否 728/728、README 是否含同一段、tarball 是否真的包含 `seed.txt`、`cordis.patch.yml` 和 locale。
 
 ---
 
@@ -336,15 +365,25 @@ systemPrompt.section({
 
 ---
 
-## 6. 即插即用：不新增 provider
+## 6. 即插即用：不新增 provider，也不需要 provider 路由
 
-发布包**不注册自己的 provider**。
+发布包**不注册自己的 provider**，也**不需要按供货商配路由**。
 
-`cordis.patch.yml` 里没有 `provider` / `models` / `reasoningEfforts`，所以模型选择器不会多出一个“WeNeed 中间商”。插件只做两件事：
+`cordis.patch.yml` 里只有：
+
+```yaml
+intercept: true
+matchName: false
+targetRules:
+  - [deepseek, flash]
+```
+
+模型选择器不会多出一个“WeNeed 中间商”。插件只做：
 
 ```text
 1. 监听 llm/stream
-2. 拦截已有的 DeepSeek Flash provider/model
+2. 按 model id 判断是否同时含 deepseek + flash
+3. 命中后把带 seed 的 messages 交回原 provider adapter
 ```
 
 代码里也做了条件注册：
@@ -355,20 +394,9 @@ if (typeof config.provider === 'string' && config.provider.length > 0) {
 }
 ```
 
-发布包不设置 `provider`，因此不会注册 adapter；它仍然是纯拦截器。
+发布包不设置 `provider`，因此不会注册 adapter；它是纯拦截器。
 
-如果你要做本地测试、想暴露一个自己的 provider，可以在配置里加：
-
-```yaml
-provider: weneed-native
-models:
-  - id: deepseek-v4.1-flash
-    name: DeepSeek-V4.1-Flash
-    baseURL: https://your-upstream/v1
-    apiKeyEnv: YOUR_API_KEY
-```
-
-这不是发布包的默认形态。
+如果你要做本地测试、想暴露一个自己的 provider，可以在配置里加 `provider` / `models`；这不是发布包的默认形态，普通用户不需要。
 
 ---
 
@@ -377,14 +405,14 @@ models:
 ### npm
 
 ```sh
-dsh plugin --profile desktop add dsh-we-need-plugin@0.6.0
+dsh plugin --profile desktop add dsh-we-need-plugin@0.7.0
 ```
 
 ### tarball
 
 ```sh
 npm pack
-dsh plugin --profile desktop add ./dsh-we-need-plugin-0.6.0.tgz
+dsh plugin --profile desktop add ./dsh-we-need-plugin-0.7.0.tgz
 ```
 
 ### GitHub
@@ -411,19 +439,23 @@ targetRules:
 含义：
 
 ```text
-(model id + display name) 同时包含 deepseek 和 flash
+model id 同时包含 deepseek 和 flash
 大小写不敏感
 provider 不参与匹配
+默认不读显示名（matchName: false）
 ```
 
-所以 `deepseek-v4-flash`、`deepseek-v4.1-flash`、`DeepSeek-V4.1-Flash`、`deepseek-v4.1-flash-1017` 都会命中。
+所以 `deepseek-v4-flash`、`deepseek-v4.1-flash`、`deepseek-v4.1-flash-1017` 都会命中。
 
-### 8.2 interceptModels：请求发到哪里
+### 8.2 interceptModels：可选的高级路由
 
-`interceptModels` 不决定是否注入，只决定命中后使用哪个上游地址和凭据引用。
+**普通用户不需要配 `interceptModels`。** 发布包默认没有它；没有路由时，插件使用原 provider adapter，自动沿用原来的 baseURL 和 API key。
+
+只有想让插件自己发 HTTP、精确控制最终字段顺序时，才加：
 
 ```yaml
 intercept: true
+matchName: false
 targetRules:
   - [deepseek, flash]
 interceptModels:
@@ -432,20 +464,15 @@ interceptModels:
     name: DeepSeek-V4.1-Flash
     baseURL: https://amr-link.open-design.ai/v1
     apiKeyEnv: OPENDESIGN_API_KEY
-  - provider: baicai
-    id: deepseek-v4.1-flash-1017
-    name: DeepSeek-V4.1-Flash-1017
-    baseURL: https://sharellm.net/v1
-    apiKeyEnv: BAICAI_API_KEY
 ```
 
 字段含义：
 
 | 字段 | 含义 |
 |---|---|
-| `provider` | DSH provider route，必须完全一致 |
+| `provider` | DSH provider route，必须完全一致；只影响这条高级路由 |
 | `id` | DSH model id，必须完全一致 |
-| `name` | 用于 `targetRules` 的显示名 |
+| `name` | 可选显示名；只有 `matchName: true` 时才参与匹配 |
 | `baseURL` | 上游 base URL；插件会自动追加 `/chat/completions` |
 | `apiKeyEnv` | 凭据引用名，不是 key 值 |
 | `contextWindow` | 可选上下文窗口 |
@@ -462,28 +489,29 @@ interceptModels:
 
 改 `cordis.patch.yml` 的 `targetRules`，不要改代码。
 
-### 9.2 换 provider / 模型 id / 显示名
+### 9.2 换模型 id / 显示名
 
-改 `interceptModels` 对应条目：
+默认**不需要换 provider**；模型 id 里同时有 `deepseek` 和 `flash` 就会命中，provider 用原来的，key 和 baseURL 也自动用原来的。
+
+只有模型 id 是 opaque 的、只有显示名可读时，才需要：
 
 ```yaml
-- provider: d4
-  id: deepseek-v4.1-flash-1017
-  name: DeepSeek-V4.1-Flash-1017
-  baseURL: https://dashscope.aliyuncs.com/compatible-mode/v1
-  apiKeyEnv: D4_API_KEY
+matchName: true
+interceptModels:
+  - provider: d4
+    id: model-x
+    name: DeepSeek-V4.1-Flash
 ```
 
-- `provider` 必须和 DSH profile 的 provider route 一致；
-- `id` 必须和模型选择器里的 model id 一致；
-- `name` 是 `targetRules` 的匹配来源之一；
-- `baseURL` 和 `apiKeyEnv` 必须指向真实上游和已有凭据。
+这时 `name` 只是可选的显示名映射，不是 provider 路由；`provider` / `id` 用来精确匹配当前请求。
 
-### 9.3 改上游地址 / API key
+如果想让插件自己发 HTTP、精确控制字段顺序，才需要完整的 `baseURL` / `apiKeyEnv` 路由。
 
-只改 `baseURL` 和 `apiKeyEnv`。不要把 key 值写进插件。
+### 9.3 API key
 
-插件运行时：
+默认不配置 API key，也不需要 `apiKeyEnv`。插件把请求交回原 provider adapter，key 自动沿用 DSH 里原来的配置。
+
+只有使用可选的 `interceptModels` 自定义路由时，才需要 `apiKeyEnv`。插件运行时：
 
 ```js
 const credentials = ctx.get('credentials');
@@ -497,6 +525,8 @@ return hit?.value ?? process.env[ref];
 $DSH_HOME/.credentials.yaml
 $DSH_HOME/.env
 ```
+
+不要把 key 值写进插件。
 
 ### 9.4 改 seed
 
@@ -573,47 +603,24 @@ targetRules:
 
 不推荐：会把所有 DeepSeek 模型都纳入，包括非 Flash、非 4.x。
 
-### 10.6 只对某个 provider 生效
+### 10.6 provider 默认不限制
 
-`targetRules` 本身不检查 provider。要限制 provider，只给那个 provider 配置 `interceptModels` 路由；其他 provider 没有路由，会原样透传。
+这是本插件的默认行为：**任何 provider 都生效**，不需要、也不建议按 provider 配路由。模型 id 里同时有 `deepseek` 和 `flash` 就命中，后面自动用原来的 provider adapter。
 
-```yaml
-interceptModels:
-  - provider: baicai
-    id: deepseek-v4.1-flash-1017
-    ...
-```
+如果你确实只想让某一个 provider 生效，当前版本没有简单的 provider-only 开关；需要在代码里加条件，或者只给那一个 provider 安装插件。不要用“只配一个 interceptModels 路由”来实现限制，因为没路由的 provider 会走 delegated 模式，仍然会生效。
 
-### 10.7 对多个 provider 生效
+### 10.7 同一个模型 id 在多个 provider 下
 
-为每个 provider 各写一条路由：
-
-```yaml
-interceptModels:
-  - provider: opendesign
-    id: deepseek-v4.1-flash
-    ...
-  - provider: baicai
-    id: deepseek-v4.1-flash-1017
-    ...
-  - provider: d4
-    id: deepseek-v4.1-flash-1017
-    ...
-```
-
-匹配仍然只看模型名；路由只是按 `provider/model` 精确查表。
+不需要为每个 provider 写路由。每个 provider 都用自己的 adapter 和 key；只要 model id 命中 `targetRules`，都会注入。
 
 ### 10.8 模型 id 是 opaque 的情况
 
-如果 model id 没有 `deepseek` / `flash`，但显示名有，把显示名写进 `interceptModels[].name`：
+默认只看 model id；如果 id 是 `model-x` 这种看不出名字的，默认不会命中。可以：
 
-```yaml
-- provider: my-provider
-  id: model-x
-  name: DeepSeek-V4.1-Flash
-```
+- 让 provider 把 model id 设成可读名称（推荐）；或者
+- 使用高级自定义路由：`matchName: true` + `interceptModels[]` 提供 `provider/id/name`，并补齐 `baseURL` / `apiKeyEnv`，让插件自己发 HTTP。
 
-`isTarget` 会同时检查 id 和 name。
+单纯写一个 `name` 而不提供上游路由，当前版本不会把它当成“只做显示名映射”；它会被当成自定义 adapter 路由。
 
 ---
 
@@ -653,11 +660,14 @@ apply()            # llm/stream 拦截
 | 接口 | 用途 |
 |---|---|
 | `package.json.dsh.bundle.patch` | 声明这是 DSH bundle |
-| `cordis.patch.yml` | 插入插件行，配置 targetRules / interceptModels |
+| `cordis.patch.yml` | 插入插件行，配置 targetRules / matchName / 可选 interceptModels |
 | `apply(ctx, config)` | 插件入口 |
 | `ctx.on('llm/stream', handler, { global: true })` | 拦截模型请求 |
+| `ctx.llm.prepareCall(provider, model, controls)` | delegated 模式：取得原 provider 的调用句柄 |
+| `prepared.stream(options)` | delegated 模式：把改好的 messages 交回原 adapter |
+| `options.__weneedBypass` | 防止 delegated 重新进入本插件 |
 | `ctx.llm.registerAdapter(...)` | 可选：注册自己的 provider（发布包不启用） |
-| `ctx.get('credentials').resolve(ref)` | 读取 DSH 凭据 |
+| `ctx.get('credentials').resolve(ref)` | 可选自定义路由读取 DSH 凭据 |
 | `ctx.get('systemPrompt').section(...)` | 可选：追加 system 引导 |
 | `next()` | 未命中时交回原 adapter |
 
@@ -708,12 +718,12 @@ dsh --profile desktop --dump-config
 按顺序检查：
 
 ```text
-1. 模型 id/name 是否命中 targetRules
-2. provider/model 是否有 interceptModels 路由
-3. options.purpose 是否非空（辅助调用）
-4. 是否 tool step / compaction request
-5. 是否被 target: false 显式关闭
-6. 上游 API key 是否能解析
+1. 模型 id 是否命中 targetRules（默认只看 id，不看显示名）
+2. options.purpose 是否非空（辅助调用）
+3. 是否 tool step / compaction request
+4. 是否被 target: false 显式关闭
+5. DSH 是否有 ctx.llm.prepareCall（delegated 模式需要）
+6. 如果用了可选 interceptModels 路由，检查 baseURL / apiKeyEnv
 ```
 
 ### 注入了但位置不对
@@ -740,15 +750,15 @@ npm pack
 产物：
 
 ```text
-dsh-we-need-plugin-0.6.0.tgz
+dsh-we-need-plugin-0.7.0.tgz
 ```
 
 GitHub Release：
 
 ```sh
-git tag v0.6.0
-git push origin v0.6.0
-gh release create v0.6.0 ./dsh-we-need-plugin-0.6.0.tgz --generate-notes
+git tag v0.7.0
+git push origin v0.7.0
+gh release create v0.7.0 ./dsh-we-need-plugin-0.7.0.tgz --generate-notes
 ```
 
 npm：
@@ -772,8 +782,8 @@ GitHub topic: dsh-plugin
 ```text
 dsh-we-need-plugin/
   package.json          # name/version/files/engines/dsh.bundle
-  cordis.patch.yml      # plugin row + targetRules + interceptModels
-  index.js              # injectSeed + isTarget + configFor + llm/stream
+  cordis.patch.yml      # plugin row + targetRules + matchName
+  index.js              # injectSeed + isTarget + delegated + optional custom adapter
   seed.txt              # 728/728 seed
   locale/               # en/zh metadata
   icon.svg
@@ -787,10 +797,11 @@ dsh-we-need-plugin/
 ## 17. 已知限制
 
 - 语态是概率性的，seed 不是硬保证。
-- 只支持 OpenAI Chat Completions 兼容上游；Anthropic Messages / OpenAI Responses 需要扩展 adapter。
-- 图片内容会变成 `[image]` 文本占位。
-- 跨模型历史：DSH 原生 pi-ai 会丢弃其他模型的 thinking；本插件的 `wireMessage()` 没有 same-model 检查，Kimi → DeepSeek 历史会把 Kimi reasoning 也带给 DeepSeek。这是当前已知差异。
-- 不做 provider 自动发现；新增 provider 需要手写 `interceptModels` 路由。
+- delegated 模式使用原 provider adapter，支持原 adapter 支持的协议；可选的 `interceptModels` 自定义 adapter 只支持 OpenAI Chat Completions。
+- delegated 模式保留原 adapter 的图片/文件处理；自定义 adapter 路线会把图片变成 `[image]` 文本占位。
+- delegated 模式保留原 adapter 的跨模型历史过滤；自定义 adapter 的 `wireMessage()` 没有 same-model 检查，Kimi → DeepSeek 历史会把 Kimi reasoning 也带给 DeepSeek。这是当前已知差异。
+- 默认不需要 provider 配置；任何 provider 都可用。
+- delegated 模式的字段顺序由原 adapter 决定，不保证 DSH 自定义 wire 契约；需要精确字段契约时用 `interceptModels` 自定义路由。
 - 不做 token 计数、不做 drift 重锚、不在工具步追加 seed。
 
 ---

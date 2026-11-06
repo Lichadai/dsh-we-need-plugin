@@ -77,6 +77,23 @@ assert.equal(isTarget('deepseek-v4-flash', ''), true);
 assert.equal(isTarget('deepseek-v4.1-flash', '', false), false);
 assert.equal(isTarget('deepseek-v4-pro', ''), false);
 assert.equal(isTarget('kimi-k3.1-pro', ''), false);
+assert.equal(isTarget('vendor-alias', 'DeepSeek-V4.1-Flash'), false);
+assert.equal(isTarget('vendor-alias', 'DeepSeek-V4.1-Flash', undefined, DEFAULT_TARGET_RULES, true), true);
+
+const nameOnly = injectSeed(
+  [system('system prompt'), user('task')],
+  { ...OPTIONS, model: 'vendor-alias' },
+  { name: 'DeepSeek-V4.1-Flash' },
+);
+assert.equal(nameOnly.injected, false);
+const nameOnlyAllowed = injectSeed(
+  [system('system prompt'), user('task')],
+  { ...OPTIONS, model: 'vendor-alias' },
+  { name: 'DeepSeek-V4.1-Flash' },
+  DEFAULT_TARGET_RULES,
+  true,
+);
+assert.equal(nameOnlyAllowed.injected, true);
 
 const extraRules = [['deepseek', '4.1'], ['deepseek', '4', 'pro'], ['kimi', '3.1']];
 assert.equal(isTarget('deepseek-v4-pro', '', undefined, extraRules), true);
@@ -142,5 +159,63 @@ assert.deepEqual(await runInterceptor({ provider: 'weneed-native', model: 'deeps
 ]);
 WeNeedNativeAdapter.prototype.stream = originalStream;
 
+const delegatedHandlers = [];
+let preparedCalls = 0;
+const delegatedCtx = {
+  llm: {
+    registerAdapter() { throw new Error('delegated release must not register a provider'); },
+    async prepareCall(config) {
+      preparedCalls += 1;
+      return {
+        config: {
+          provider: config.provider,
+          model: config.model,
+          ...(config.reasoningEffort === undefined ? {} : { reasoningEffort: config.reasoningEffort }),
+          ...(config.temperature === undefined ? {} : { temperature: config.temperature }),
+          ...(config.maxTokens === undefined ? {} : { maxTokens: config.maxTokens }),
+          ...(config.stop === undefined ? {} : { stop: config.stop }),
+        },
+        stream: async function* (options) {
+          const seeded = options.messages.some((message) => message.role === 'assistant'
+            && message.content?.some((block) => block.type === 'reasoning' && block.text?.startsWith('We need understand')));
+          yield { type: 'text-delta', text: `delegated:${options.provider}/${options.model}:${options.__weneedBypass}:${seeded}` };
+        },
+      };
+    },
+  },
+  on(event, handler) {
+    if (event === 'llm/stream') delegatedHandlers.push(handler);
+  },
+  get() {},
+};
+apply(delegatedCtx, { intercept: true, targetRules: DEFAULT_TARGET_RULES });
+const runDelegated = async (options) => {
+  const chunks = [];
+  for await (const chunk of delegatedHandlers[0](options, async function* () {
+    yield { type: 'text-delta', text: 'next' };
+  })) chunks.push(chunk);
+  return chunks;
+};
+assert.deepEqual(await runDelegated({
+  provider: 'any-provider',
+  model: 'deepseek-v4-flash',
+  messages: [system('system prompt'), user('task')],
+}), [{ type: 'text-delta', text: 'delegated:any-provider/deepseek-v4-flash:true:true' }]);
+assert.equal(preparedCalls, 1);
+assert.deepEqual(await runDelegated({
+  provider: 'any-provider',
+  model: 'vendor-alias',
+  messages: [system('system prompt'), user('task')],
+}), [{ type: 'text-delta', text: 'next' }]);
+assert.equal(preparedCalls, 1);
+assert.deepEqual(await runDelegated({
+  provider: 'any-provider',
+  model: 'deepseek-v4-flash',
+  __weneedBypass: true,
+  messages: [],
+}), [{ type: 'text-delta', text: 'next' }]);
+assert.equal(preparedCalls, 1);
+
 console.log('PASS release injection, compaction, tool-step, old-seed strip, non-target');
-console.log('PASS release target rules and provider-scoped intercept routes');
+console.log('PASS release target rules and optional provider-scoped intercept routes');
+console.log('PASS provider-agnostic delegated mode: any provider, model-id match, bypass guard');

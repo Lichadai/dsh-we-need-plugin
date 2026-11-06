@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "DSH We Need Plugin",
-    "description": "默认按 DeepSeek + Flash 筛选，在目标模型的新 user task 前注入 728/728 WeNeed seed。请先读 README 的「使用技巧」：工具尽量后调用，先思考/计划，不要过早调用工具。"
+    "description": "默认按发给上游的 model id 里的 DeepSeek + Flash 筛选（provider 不限），在目标模型的新 user task 前注入 728/728 WeNeed seed。请先读 README 的「使用技巧」：工具尽量后调用，先思考/计划，不要过早调用工具。"
   }
 }
