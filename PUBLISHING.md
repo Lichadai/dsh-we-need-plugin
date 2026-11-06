@@ -23,18 +23,18 @@ npm pack
 产物：
 
 ```text
-dsh-weneed-plugin-0.5.0.tgz
+dsh-we-need-plugin-0.6.0.tgz
 ```
 
 ## 创建仓库并推送
 
 ```sh
 git init
-git config user.name "DSH WeNeed Plugin"
+git config user.name "DSH We Need Plugin"
 git config user.email "<id>+<login>@users.noreply.github.com"
 git add .
-git commit -m "release: dsh-weneed-plugin 0.5.0"
-gh repo create Lichadai/dsh-weneed-plugin --public --source=. --remote=origin --push
+git commit -m "release: dsh-we-need-plugin 0.6.0"
+gh repo create Lichadai/dsh-we-need-plugin --public --source=. --remote=origin --push
 ```
 
 使用 GitHub 的 noreply 邮箱，不要使用私人邮箱。
@@ -44,9 +44,9 @@ gh repo create Lichadai/dsh-weneed-plugin --public --source=. --remote=origin --
 ## 创建 Release
 
 ```sh
-git tag v0.5.0
-git push origin v0.5.0
-gh release create v0.5.0 ./dsh-weneed-plugin-0.5.0.tgz --generate-notes
+git tag v0.6.0
+git push origin v0.6.0
+gh release create v0.6.0 ./dsh-we-need-plugin-0.6.0.tgz --generate-notes
 ```
 
 GitHub Actions 也会在 tag push 时创建 Release；手动命令是可选的。
@@ -58,7 +58,7 @@ npm login
 npm publish --access public
 ```
 
-需要 npm 账号。包名是 `dsh-weneed-plugin`，`publishConfig.access` 已经是 `public`。
+需要 npm 账号。包名是 `dsh-we-need-plugin`，`publishConfig.access` 已经是 `public`。
 
 ## 插件发现
 

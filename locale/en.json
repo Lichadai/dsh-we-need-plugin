@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "WeNeed native seed",
-    "description": "Injects the 728/728 WeNeed assistant seed before new user tasks for DeepSeek Flash models, without an HTTP proxy."
+    "title": "DSH We Need Plugin",
+    "description": "Default filter: DeepSeek + Flash. Injects the 728/728 WeNeed seed before new user tasks. Read the README 'Usage tips' first: delay tool calls, think and plan before acting."
   }
 }

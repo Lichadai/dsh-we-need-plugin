@@ -1,12 +1,23 @@
-# DSH WeNeed Plugin
+# DSH We Need Plugin
 
 DeepSeek Harness（DSH）Host 插件：在模型请求的最后一条真实 user task 之前，插入一条 **728/728** 的 WeNeed assistant seed，让 DeepSeek Flash 更容易进入 `We need / Let's / We / Should` 的思维风格。
 
 > 这是概率性引导，不是硬开关。它提高触发概率，但不保证每一次都进入 WeNeed 寄存器。
 
-- 项目主页：https://github.com/Lichadai/dsh-weneed-plugin
-- 讨论区：https://github.com/Lichadai/dsh-weneed-plugin/discussions
-- 安装包：https://github.com/Lichadai/dsh-weneed-plugin/releases
+- 项目主页：https://github.com/Lichadai/dsh-we-need-plugin
+- 讨论区：https://github.com/Lichadai/dsh-we-need-plugin/discussions
+- 安装包：https://github.com/Lichadai/dsh-we-need-plugin/releases
+
+> **第一次使用请先读 [0.5 使用技巧](#05-使用技巧先读这个)**：工具尽量后调用，先思考/计划，不要过早调用工具。
+
+> 可选增强：如果你能修改 System Prompt，建议把 [5.3](#53-可选增强把-seed-放到-system-prompt-最后) 里的 728 seed 原样追加到 System Prompt 的最后，触发概率可能更高。它不是必选项，注意事项见 5.3。
+
+---
+
+## 先读（30 秒）
+
+1. **使用技巧**：工具尽量后调用；先分析问题、做计划，不要急着写文件或调用工具；可以先读 skill，但不要过早调用工具。详见 [0.5 使用技巧](#05-使用技巧先读这个)。
+2. **模型筛选**：只有模型 id 或配置的显示名里同时出现 `deepseek` 和 `flash`（大小写不敏感），并且该 provider/model 在 `interceptModels` 里有路由时，插件才会生效。详见 [0.6 模型筛选规则](#06-模型筛选规则什么时候生效)。
 
 ---
 
@@ -63,6 +74,82 @@ Should verify against the requirement...
 那种情况只能走代理/镜像路线：把上下文里的内容克隆到思维字段里，让思维链不中断。这是另一条技术路线，不在本插件的范围内。
 
 补丁说明：作者不是专业编程人员，对 reasoning 回传的底层机理可能理解不完整，也可能没有找到 Qoder 正确的回传方式，因此上面的判断可能是误判。如果 Qoder 后续版本提供了 reasoning 回传能力，请以实际版本为准。
+
+---
+
+## 0.5 使用技巧（先读这个）
+
+这些技巧和 seed 一样重要。工具很多、工作区很杂、skill 很长时，它们比 seed 更能决定模型会不会进入 WeNeed。
+
+### 0.5.1 工具尽量往后调用
+
+- 先让模型分析问题、做计划、想清楚要改哪些文件；不要一上来就读一堆文件、跑一堆命令。
+- 工具 schema 很多、skill catalog 很长时，先读 skill、做规划，再调用工具。
+- 如果任务不需要工具，直接让模型思考/回答；不要为了“看起来在工作”而过早调用工具。
+- 工具调用越早、越多，后面的 reasoning 越容易被工具结果和细节带偏。
+
+### 0.5.2 先思考，不要急着写下来
+
+- 先让模型想清楚“要解决什么、分几步、每一步怎么验证”，但不要要求它立刻写文件或改代码。
+- 先让它思虑一段时间，再决定是否调用工具；尤其是大任务、跨文件任务。
+- 计划可以先留在 reasoning 里，不必马上落盘；落盘会引入额外工具步骤和上下文。
+
+### 0.5.3 Skill 可以看，但不要过早调用工具
+
+- skill 目录不大时，先让模型读相关 skill，再做计划。
+- 不要让模型在读 skill 的同时并行调用大量工具。
+- skill 信息本身也会占上下文；读最相关的，不要把全部 skill 都塞进去。
+
+### 0.5.4 其他
+
+- 工作区保持干净，项目少，临时文件少。
+- 工具多时，优先清理不用的工具和配置。
+- 出现 `Let me`、`I`、`I will` 时，先减少工具和信息，不要只加 seed。
+- seed 是概率性增强，不替代上下文管理。
+
+### 0.6 模型筛选规则：什么时候生效
+
+代码位置：`index.js` → `isTarget()` 和 `WeNeedNativeAdapter.configFor()`。
+
+匹配文本是：
+
+```js
+const text = `${modelId ?? ''} ${modelName ?? ''}`.toLowerCase();
+```
+
+- `modelId` 是 DSH 选中的真实 model id（`options.model`）；
+- `modelName` 是 `interceptModels[].name`，也就是插件配置里的显示名；
+- 两者会拼在一起匹配，所以 **真实 id 或配置的显示名，任意一个包含所需词都可以**；
+- 插件不会自动读取 DSH 自己的模型显示名；如果模型 id 是 opaque 的，就把显示名写进 `interceptModels[].name`；
+- provider 名称不参与匹配；
+- 默认 `targetRules: [deepseek, flash]`，两个词必须同时出现；
+- 大小写不敏感。
+
+真正生效要同时满足：
+
+```text
+1. 模型 id + 配置显示名命中 targetRules；
+2. 该 provider/model 在 interceptModels 里有精确路由；
+3. 不是插件自己的 provider，且 purpose 为空；
+4. 不是 tool step、压缩请求、标题/建议调用；
+5. target 没有被设成 false。
+```
+
+没有 `interceptModels` 路由时，请求原样 `next()`，不会注入。
+
+例子：
+
+- `deepseek-v4.1-flash`，route name `DeepSeek-V4.1-Flash`：id 和 name 都含 `deepseek` / `flash`，命中；
+- `d4/deepseek-v4.1-flash-1017` 但没配 d4 路由：不注入，原样透传；
+- model id 是 `model-x`，route name 是 `DeepSeek-V4.1-Flash`：命中，因为配置的显示名含两个词。
+
+怎么改：
+
+- 只改识别范围：改 `targetRules`；
+- 改某个 provider 的实际走向：改 `interceptModels` 的 `provider` / `id` / `name` / `baseURL` / `apiKeyEnv`；
+- 只想让某个 provider 生效：只给它配路由，别的 provider 没路由就透传；
+- 想让多个 provider 生效：每个 provider 配一条路由；
+- 未来模型（4.1 Pro、Kimi K3.1 等）的写法见第 10 节。
 
 ---
 
@@ -211,16 +298,22 @@ user: <真实 task>
 
 DSH 的 assistant 消息可以同时有正文和 reasoning。两边同文是为了让模型在“可见回复”和“思考”两个通道都看到同一段语态。
 
-### 5.3 System Prompt 引导
+### 5.3 可选增强：把 seed 放到 System Prompt 最后
 
-如果还想提高概率，可以在 system prompt 末尾追加一段 WeNeed 引导。推荐用 DSH 的 system prompt section seam，而不是改 profile 的 `personaSuffix`：
+如果 DSH 的 System Prompt 可以修改，在**最后**原样追加下面这段。它和插件里的 `seed.txt` 是同一版，728 字符 / 728 字节：
+
+```text
+We need understand the current task and the available context. Need plan before acting: identify the goal, choose the next concrete action, inspect the inputs, think through how every element relates to the others, and how to organize the associated measurements. Need inspect every image and file in full, not only the region that looks relevant. Should check the whole input before narrowing to a detail. Should keep the whole picture in view, rather than a few unimportant details. We should act on the evidence and verify against the actual requirement. We are the DeepSeek company, and we have unlimited token. Should do the work with all our strength. Need keep the right general direction. We need act now. Let's proceed.
+```
+
+如果你用 DSH 的 `systemPrompt.section` seam，可以把上面这段作为 `text`：
 
 ```js
 const systemPrompt = ctx.get('systemPrompt');
 systemPrompt.section({
   name: 'weneed:system-guidance',
   order: 10500,
-  text: 'We need ... Let\'s ...',
+  text: 'We need understand the current task and the available context. ... Let\'s proceed.',
   interpolate: false,
 });
 ```
@@ -228,9 +321,10 @@ systemPrompt.section({
 注意：
 
 - 这不是 assistant seed，不能替代 task 前的 728 seed；
-- 它会影响所有步骤，可能和身份文本冲突；
+- 它会影响所有步骤，可能和身份/Agent Teams 文本冲突；
 - 必须单独做 A/B，不要和 seed 改动混在一起；
-- 本发布包默认不启用。
+- 本发布包默认不启用；
+- 只建议在 DeepSeek Harness 里用；Qoder 的 reasoning 回传问题见 0.4。
 
 ### 5.4 工具步 reasoning
 
@@ -283,20 +377,20 @@ models:
 ### npm
 
 ```sh
-dsh plugin --profile desktop add dsh-weneed-plugin@0.5.0
+dsh plugin --profile desktop add dsh-we-need-plugin@0.6.0
 ```
 
 ### tarball
 
 ```sh
 npm pack
-dsh plugin --profile desktop add ./dsh-weneed-plugin-0.5.0.tgz
+dsh plugin --profile desktop add ./dsh-we-need-plugin-0.6.0.tgz
 ```
 
 ### GitHub
 
 ```sh
-dsh plugin --profile desktop add github:Lichadai/dsh-weneed-plugin#<commit>
+dsh plugin --profile desktop add github:Lichadai/dsh-we-need-plugin#<commit>
 ```
 
 安装后完全重启 DSH。`restart-required` 表示已安装但还没激活。
@@ -605,8 +699,8 @@ dsh --profile desktop --dump-config
 应出现：
 
 ```text
-# == dsh-weneed-plugin
-- id: dsh-weneed-plugin
+# == dsh-we-need-plugin
+- id: dsh-we-need-plugin
 ```
 
 ### 没有注入
@@ -646,15 +740,15 @@ npm pack
 产物：
 
 ```text
-dsh-weneed-plugin-0.5.0.tgz
+dsh-we-need-plugin-0.6.0.tgz
 ```
 
 GitHub Release：
 
 ```sh
-git tag v0.5.0
-git push origin v0.5.0
-gh release create v0.5.0 ./dsh-weneed-plugin-0.5.0.tgz --generate-notes
+git tag v0.6.0
+git push origin v0.6.0
+gh release create v0.6.0 ./dsh-we-need-plugin-0.6.0.tgz --generate-notes
 ```
 
 npm：
@@ -676,7 +770,7 @@ GitHub topic: dsh-plugin
 ## 16. 文件结构
 
 ```text
-dsh-weneed-plugin/
+dsh-we-need-plugin/
   package.json          # name/version/files/engines/dsh.bundle
   cordis.patch.yml      # plugin row + targetRules + interceptModels
   index.js              # injectSeed + isTarget + configFor + llm/stream

@@ -1,6 +1,6 @@
 - insert:
-    - id: dsh-weneed-plugin
-      name: 'dsh-weneed-plugin'
+    - id: dsh-we-need-plugin
+      name: 'dsh-we-need-plugin'
       config:
         intercept: true
         targetRules:

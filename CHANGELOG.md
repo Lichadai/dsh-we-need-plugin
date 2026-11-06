@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0
+
+- Renamed the project/package to `dsh-we-need-plugin` (DSH We Need Plugin); the hyphen separates We and need for readability.
+- README now includes an optional System Prompt tail with the exact 728/728 seed.
+- GitHub repository renamed to `Lichadai/dsh-we-need-plugin`.
+
 ## 0.5.0
 
 - Renamed the project to `dsh-weneed-plugin` (DSH WeNeed Plugin).

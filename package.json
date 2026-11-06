@@ -1,17 +1,17 @@
 {
-  "name": "dsh-weneed-plugin",
-  "version": "0.5.0",
+  "name": "dsh-we-need-plugin",
+  "version": "0.6.0",
   "type": "module",
   "description": "DSH WeNeed 插件：在 DeepSeek Harness 中为 DeepSeek Flash 注入 728/728 WeNeed assistant seed；仅适用于 DSH。",
   "license": "MIT",
-  "author": "DSH WeNeed Plugin contributors",
+  "author": "DSH We Need Plugin contributors",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Lichadai/dsh-weneed-plugin.git"
+    "url": "git+https://github.com/Lichadai/dsh-we-need-plugin.git"
   },
-  "homepage": "https://github.com/Lichadai/dsh-weneed-plugin#readme",
+  "homepage": "https://github.com/Lichadai/dsh-we-need-plugin#readme",
   "bugs": {
-    "url": "https://github.com/Lichadai/dsh-weneed-plugin/issues"
+    "url": "https://github.com/Lichadai/dsh-we-need-plugin/issues"
   },
   "keywords": [
     "dsh-plugin",
