@@ -1,2 +1,16 @@
 node_modules/
 *.tgz
+*.log
+.env
+.env.*
+.credentials.yaml
+.credentials.yaml.*
+reports/
+backups/
+captures/
+capture/
+sessions/
+tests/pack-home/
+tests/pack-home-release/
+.DS_Store
+Thumbs.db

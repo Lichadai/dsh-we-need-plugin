@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "WeNeed native seed",
+    "description": "Injects the 728/728 WeNeed assistant seed before new user tasks for DeepSeek Flash models, without an HTTP proxy."
+  }
+}

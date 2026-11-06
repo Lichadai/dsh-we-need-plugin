@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "WeNeed 原生 seed",
+    "description": "对 DeepSeek Flash 模型在新 user task 前注入 728/728 的 WeNeed assistant seed，不再依赖 HTTP 代理。"
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "name": "weneed-native-seed",
+  "version": "0.4.0",
+  "type": "module",
+  "description": "WeNeed 728/728 assistant seed for DeepSeek Flash models in DeepSeek Harness.",
+  "license": "MIT",
+  "author": "WeNeed Native Seed contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lichadai/weneed-native-seed.git"
+  },
+  "homepage": "https://github.com/Lichadai/weneed-native-seed#readme",
+  "bugs": {
+    "url": "https://github.com/Lichadai/weneed-native-seed/issues"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "weneed",
+    "deepseek",
+    "seed"
+  ],
+  "engines": {
+    "dsh": ">=0.2.2-rc.1",
+    "node": ">=22"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "seed.txt",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "test": "node tests/injection.test.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
