@@ -1,8 +1,8 @@
 {
   "name": "dsh-we-need-plugin",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "type": "module",
-  "description": "DSH We Need 插件：按发给上游的 model id 里的 DeepSeek + Flash 筛选（provider 不限），注入 728/728 WeNeed assistant seed；仅适用于 DSH。",
+  "description": "DSH We Need 插件：按发给上游的 model id 里的 DeepSeek + Flash 筛选（provider 不限，大小写不敏感），把 seed.txt 的实际内容注入为 WeNeed assistant seed；仅适用于 DSH。",
   "license": "MIT",
   "author": "DSH We Need Plugin contributors",
   "repository": {

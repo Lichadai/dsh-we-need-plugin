@@ -11,8 +11,9 @@ const readme = read('README.md');
 const pkg = JSON.parse(read('package.json'));
 const patch = read('cordis.patch.yml');
 
-assert.equal(seed.length, 728, 'seed must be 728 chars');
-assert.equal(Buffer.byteLength(seed), 728, 'seed must be 728 bytes');
+assert.ok(seed.length > 0, 'seed must not be empty');
+assert.ok(Buffer.byteLength(seed) > 0, 'seed bytes must not be empty');
+assert.equal(pkg.version, '0.7.1', 'release version must be 0.7.1');
 assert.ok(readme.includes(seed), 'README must contain the exact seed text');
 assert.ok(pkg.files.includes('seed.txt'), 'package.json files must include seed.txt');
 assert.ok(pkg.files.includes('cordis.patch.yml'), 'package.json files must include cordis.patch.yml');
@@ -44,4 +45,4 @@ for (const required of ['index.js', 'seed.txt', 'cordis.patch.yml', 'locale/zh.j
 assert.ok(!files.includes('harness.js'), 'tarball must not include harness.js');
 assert.ok(!files.some((file) => file.startsWith('tests/')), 'tests should stay out of the npm tarball');
 
-console.log('PASS package integrity: seed 728/728, README seed, patch name/rules, tarball files, no harness');
+console.log('PASS package integrity: non-empty seed, README seed, deepseek + flash rule, tarball files, no harness');

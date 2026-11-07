@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const SEED = readFileSync(new URL('../seed.txt', import.meta.url), 'utf8').trim();
 import {
   apply,
   injectSeed,
@@ -31,7 +34,7 @@ assert.equal(normal.reason, 'user-task');
 assert.equal(normal.messages.length, 4);
 assert.equal(normal.messages[2].role, 'assistant');
 assert.equal(normal.messages[3].role, 'user');
-assert.deepEqual(seedLength(normal.messages[2]), { content: 728, reasoning: 728 });
+assert.deepEqual(seedLength(normal.messages[2]), { content: SEED.length, reasoning: SEED.length });
 
 const compactionRequest = injectSeed(
   [system('You are acting as a compaction engine. Output only the checkpoint text.')],
@@ -47,7 +50,7 @@ const postCompactionTask = injectSeed(
   MODEL,
 );
 assert.equal(postCompactionTask.injected, true);
-assert.deepEqual(seedLength(postCompactionTask.messages[1]), { content: 728, reasoning: 728 });
+assert.deepEqual(seedLength(postCompactionTask.messages[1]), { content: SEED.length, reasoning: SEED.length });
 
 const postCompactionTool = injectSeed(
   [user('<compacted-summary>checkpoint</compacted-summary>'), assistantTool(), tool()],
@@ -76,6 +79,7 @@ assert.equal(isTarget('deepseek-v4.1-flash-1017', 'DeepSeek-V4.1-Flash-1017'), t
 assert.equal(isTarget('deepseek-v4-flash', ''), true);
 assert.equal(isTarget('deepseek-v4.1-flash', '', false), false);
 assert.equal(isTarget('deepseek-v4-pro', ''), false);
+assert.equal(isTarget('DEEPSEEK-Coder', ''), false);
 assert.equal(isTarget('kimi-k3.1-pro', ''), false);
 assert.equal(isTarget('vendor-alias', 'DeepSeek-V4.1-Flash'), false);
 assert.equal(isTarget('vendor-alias', 'DeepSeek-V4.1-Flash', undefined, DEFAULT_TARGET_RULES, true), true);
@@ -154,6 +158,9 @@ assert.deepEqual(await runInterceptor({ provider: 'baicai', model: 'deepseek-v4.
 assert.deepEqual(await runInterceptor({ provider: 'opendesign', model: 'deepseek-v4-pro' }), [
   { type: 'text-delta', text: 'next' },
 ]);
+assert.deepEqual(await runInterceptor({ provider: 'opendesign', model: 'kimi-k3.1-pro' }), [
+  { type: 'text-delta', text: 'next' },
+]);
 assert.deepEqual(await runInterceptor({ provider: 'weneed-native', model: 'deepseek-v4.1-flash' }), [
   { type: 'text-delta', text: 'next' },
 ]);
@@ -201,6 +208,12 @@ assert.deepEqual(await runDelegated({
   model: 'deepseek-v4-flash',
   messages: [system('system prompt'), user('task')],
 }), [{ type: 'text-delta', text: 'delegated:any-provider/deepseek-v4-flash:true:true' }]);
+assert.equal(preparedCalls, 1);
+assert.deepEqual(await runDelegated({
+  provider: 'any-provider',
+  model: 'deepseek-v4-pro',
+  messages: [system('system prompt'), user('task')],
+}), [{ type: 'text-delta', text: 'next' }]);
 assert.equal(preparedCalls, 1);
 assert.deepEqual(await runDelegated({
   provider: 'any-provider',

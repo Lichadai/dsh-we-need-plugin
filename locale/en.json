@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "DSH We Need Plugin",
-    "description": "Default filter: DeepSeek + Flash in the upstream model id (any provider). Injects the 728/728 WeNeed seed before new user tasks. Read the README 'Usage tips' first: delay tool calls, think and plan before acting."
+    "description": "Default filter: DeepSeek + Flash in the upstream model id (any provider). Injects the actual non-empty seed.txt content before new user tasks; seed length is not fixed. The README has important information—read the usage tips first. Default filter: DeepSeek + Flash in the upstream model id; any provider. The author's empirical hypothesis: DeepSeek may have been trained under extremely tight compute and memory budgets, with a very small memory budget per training module. Heavy tool calls and large project files consume inference resources, leaving too little to invoke many internal expert models. With ample resources and many experts active, it tends to say 'We'—coordinating experts; under memory pressure, expert calls are limited and it falls back to 'I / Let me', showing overthinking. A single model alone cannot complete complex work well and fast, so 'unlimited memory / unlimited compute' describes this better than 'unlimited token / mysterious prompt'."
   }
 }

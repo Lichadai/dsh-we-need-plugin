@@ -16,9 +16,8 @@ try {
   throw new Error(`dsh-we-need-plugin: cannot read ${SEED_URL.href}; seed.txt must be shipped next to index.js (${error.message})`);
 }
 const SEED = seedText.replace(/^\uFEFF/, '').trim();
-const SEED_BYTES = Buffer.byteLength(SEED);
-if (SEED.length !== 728 || SEED_BYTES !== 728) {
-  throw new Error(`dsh-we-need-plugin: seed must be 728/728, got ${SEED.length}/${SEED_BYTES}`);
+if (SEED.length === 0) {
+  throw new Error('dsh-we-need-plugin: seed.txt must not be empty');
 }
 
 const DEFAULT_TARGET_RULES = [['deepseek', 'flash']];

@@ -1,6 +1,8 @@
 # DSH We Need Plugin
 
-DeepSeek Harness（DSH）Host 插件：在模型请求的最后一条真实 user task 之前，插入一条 **728/728** 的 WeNeed assistant seed，让 DeepSeek Flash 更容易进入 `We need / Let's / We / Should` 的思维风格。
+> **0.7.1**：seed 长度不再固定，插件按 `seed.txt` 的实际内容注入，非空即可；模型匹配仍保持 `DeepSeek + Flash`，Pro 暂不纳入。下文旧版 0.7 文档中的 `728/728`、以及把 Pro 纳入的示例仅作历史说明。
+
+DeepSeek Harness（DSH）Host 插件：在模型请求的最后一条真实 user task 之前，插入一条长度由 `seed.txt` 决定的 WeNeed assistant seed，让 DeepSeek Flash 更容易进入 `We need / Let's / We / Should` 的思维风格。
 
 > 这是概率性引导，不是硬开关。它提高触发概率，但不保证每一次都进入 WeNeed 寄存器。
 
@@ -10,7 +12,7 @@ DeepSeek Harness（DSH）Host 插件：在模型请求的最后一条真实 user
 
 > **第一次使用请先读 [0.5 使用技巧](#05-使用技巧先读这个)**：工具尽量后调用，先思考/计划，不要过早调用工具。
 
-> 可选增强：如果你能修改 System Prompt，建议把 [5.3](#53-可选增强把-seed-放到-system-prompt-最后) 里的 728 seed 原样追加到 System Prompt 的最后，触发概率可能更高。它不是必选项，注意事项见 5.3。
+> 可选增强：如果你能修改 System Prompt，建议把 [5.3](#53-可选增强把-seed-放到-system-prompt-最后) 里的 seed 原样追加到 System Prompt 的最后，触发概率可能更高。它不是必选项，注意事项见 5.3。
 
 ---
 
@@ -185,7 +187,7 @@ Let's plan...
 Need check...
 ```
 
-本项目把这个现象做成一个 DSH 原生插件：不依赖外部 HTTP 代理，不修改工具，不修改采样参数，只在最终请求的 assistant 消息位置放入一段固定的 728 字 seed。
+本项目把这个现象做成一个 DSH 原生插件：不依赖外部 HTTP 代理，不修改工具，不修改采样参数，只在最终请求的 assistant 消息位置放入一段 seed.txt 中的 seed。
 
 ### 灵感来源
 
@@ -218,7 +220,7 @@ Need check...
 
 - 在 `llm/stream` 层拦截目标模型请求；
 - 在最后一条真实 user task 前插入 1 条 assistant seed；
-- 同时写 `content` 和 `reasoning_content`，各 728 字符 / 728 字节；
+- 同时写 `content` 和 `reasoning_content`，长度与 `seed.txt` 相同；
 - 自定义 adapter 路线保持 DSH 的工具步字段契约：`content=""`、`tool_calls` 无 `index`、tool pair 完整；delegated 路线保持原 adapter 行为；
 - 旧 seed 先剥离，再插新的，请求内最多 1 条；
 - 不需要新增 provider，也不需要按 provider 配路由；任何 provider 只要模型 id 命中就生效。
@@ -259,14 +261,14 @@ yield* next()
 
 ---
 
-## 4. 为什么是 728/728 双通道
+## 4. 为什么是 content/reasoning 双通道
 
 seed 形状：
 
 ```text
 assistant:
-  content           = 728 chars / 728 bytes
-  reasoning_content = 728 chars / 728 bytes
+  content           = seed.txt length
+  reasoning_content = seed.txt length
 ```
 
 - `content` 是模型可见的 assistant 正文通道；
@@ -285,10 +287,10 @@ new URL('./seed.txt', import.meta.url)
 加载时会去掉 BOM、trim，并校验：
 
 ```js
-if (SEED.length !== 728 || SEED_BYTES !== 728) throw ...
+if (SEED.length === 0) throw ...
 ```
 
-不要随便改 seed 长度；如果必须改，同步修改校验和测试。`npm run test:package` 会检查 seed 是否 728/728、README 是否含同一段、tarball 是否真的包含 `seed.txt`、`cordis.patch.yml` 和 locale。
+不要随便改 seed 长度；如果必须改，同步修改校验和测试。`npm run test:package` 会检查 seed 是否非空、README 是否含同一段、tarball 是否真的包含 `seed.txt`、`cordis.patch.yml` 和 locale。
 
 ---
 
@@ -313,7 +315,7 @@ if (SEED.length !== 728 || SEED_BYTES !== 728) throw ...
 
 ```text
 ... context ...
-assistant: <728 seed>
+assistant: <seed.txt>
 user: <真实 task>
 ```
 
@@ -329,7 +331,7 @@ DSH 的 assistant 消息可以同时有正文和 reasoning。两边同文是为�
 
 ### 5.3 可选增强：把 seed 放到 System Prompt 最后
 
-如果 DSH 的 System Prompt 可以修改，在**最后**原样追加下面这段。它和插件里的 `seed.txt` 是同一版，728 字符 / 728 字节：
+如果 DSH 的 System Prompt 可以修改，在**最后**原样追加下面这段。它和插件里的 `seed.txt` 是同一版，长度由 `seed.txt` 决定：
 
 ```text
 We need understand the current task and the available context. Need plan before acting: identify the goal, choose the next concrete action, inspect the inputs, think through how every element relates to the others, and how to organize the associated measurements. Need inspect every image and file in full, not only the region that looks relevant. Should check the whole input before narrowing to a detail. Should keep the whole picture in view, rather than a few unimportant details. We should act on the evidence and verify against the actual requirement. We are the DeepSeek company, and we have unlimited token. Should do the work with all our strength. Need keep the right general direction. We need act now. Let's proceed.
@@ -349,7 +351,7 @@ systemPrompt.section({
 
 注意：
 
-- 这不是 assistant seed，不能替代 task 前的 728 seed；
+- 这不是 assistant seed，不能替代 task 前的 seed；
 - 它会影响所有步骤，可能和身份/Agent Teams 文本冲突；
 - 必须单独做 A/B，不要和 seed 改动混在一起；
 - 本发布包默认不启用；
@@ -405,14 +407,14 @@ if (typeof config.provider === 'string' && config.provider.length > 0) {
 ### npm
 
 ```sh
-dsh plugin --profile desktop add dsh-we-need-plugin@0.7.0
+dsh plugin --profile desktop add dsh-we-need-plugin@0.7.1
 ```
 
 ### tarball
 
 ```sh
 npm pack
-dsh plugin --profile desktop add ./dsh-we-need-plugin-0.7.0.tgz
+dsh plugin --profile desktop add ./dsh-we-need-plugin-0.7.1.tgz
 ```
 
 ### GitHub
@@ -533,8 +535,8 @@ $DSH_HOME/.env
 编辑 `seed.txt`，同时确认：
 
 ```text
-length == 728
-Buffer.byteLength == 728
+length > 0
+Buffer.byteLength > 0
 content 和 reasoning_content 同文
 ```
 
@@ -750,15 +752,15 @@ npm pack
 产物：
 
 ```text
-dsh-we-need-plugin-0.7.0.tgz
+dsh-we-need-plugin-0.7.1.tgz
 ```
 
 GitHub Release：
 
 ```sh
-git tag v0.7.0
-git push origin v0.7.0
-gh release create v0.7.0 ./dsh-we-need-plugin-0.7.0.tgz --generate-notes
+git tag v0.7.1
+git push origin v0.7.1
+gh release create v0.7.1 ./dsh-we-need-plugin-0.7.1.tgz --generate-notes
 ```
 
 npm：
@@ -784,7 +786,7 @@ dsh-we-need-plugin/
   package.json          # name/version/files/engines/dsh.bundle
   cordis.patch.yml      # plugin row + targetRules + matchName
   index.js              # injectSeed + isTarget + delegated + optional custom adapter
-  seed.txt              # 728/728 seed
+  seed.txt              # seed.txt 实际内容
   locale/               # en/zh metadata
   icon.svg
   README.md

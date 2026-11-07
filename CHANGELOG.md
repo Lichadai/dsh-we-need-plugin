@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.1
+
+- Removed the hard-coded `728/728` seed-length check. The plugin now injects the actual non-empty `seed.txt` content; leading BOM/whitespace is still trimmed.
+- Model matching remains `DeepSeek + Flash` (`[deepseek, flash]`); Pro is intentionally not included yet.
+- Updated package tests and README to remove the fixed-length assumption.
+
 ## 0.7.0
 
 - Provider-agnostic release: no `interceptModels` route is required; matched requests are delegated back to the original provider adapter with the modified messages.
