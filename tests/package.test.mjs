@@ -39,6 +39,7 @@ for (const [name, text] of [
 assert.ok(seed.length > 0, 'seed must not be empty');
 assert.ok(Buffer.byteLength(seed) > 0, 'seed bytes must not be empty');
 assert.ok(/^3\.0\./.test(pkg.version), 'package version must be on the 3.0 line');
+assert.ok(read('index.js').includes("PLUGIN_VERSION = '" + pkg.version + "'"), 'index.js PLUGIN_VERSION must match package.json version');
 assert.ok(pkg.version.includes('local') || readme.includes(seed), 'release README must contain the exact seed text');
 assert.ok(pkg.files.includes('seed.txt'), 'package.json files must include seed.txt');
 assert.ok(pkg.files.includes('cordis.patch.yml'), 'package.json files must include cordis.patch.yml');

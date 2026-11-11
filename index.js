@@ -28,7 +28,7 @@ const TOOL_STEP_ANCHOR = "We need continue from the tool result. We need keep th
 const TASK_POLICY = 'Reasoning register for this task: start the plan with We need or Need; use Let\'s for the next action; keep the planning collective, concrete, and evidence-first.';
 const TASK_POLICY_HEAD = TASK_POLICY.slice(0, 40);
 const SEED_HEAD = SEED.slice(0, 48);
-const PLUGIN_VERSION = '2.2.0';
+const PLUGIN_VERSION = '3.0.0';
 const SEED_HASH = createHash('sha256').update(SEED).digest('hex').slice(0, 16);
 // External injection audit (方案 A): third-party plugins cannot write in-log
 // plugin records (appendPluginRecord is first-party-only, session README:72)
