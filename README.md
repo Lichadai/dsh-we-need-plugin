@@ -1,10 +1,10 @@
 # DSH We Need Plugin
 
-> **适用于标准模式 DeepSeek V4.1 Flash（DSH 插件 2.0.1）。**
+> **适用于 DeepSeek V4.1 Flash（DSH 插件 3.0.0）。**
 >
 > 稳定的 We Need 思维链，极大提升了 DeepSeek V4.1 Flash 执行计划的连贯性，减少无效思维，显著提升思维质量。
 
-> **2.0.1**：当前发布版。模型匹配默认要求 `DeepSeek` 与 `Flash` 两个词（大小写不敏感）；seed 按 `seed.txt` 实际内容注入。下文旧版 `728/728`、`taskPolicy`、`registerGate`、`mirrorToolSteps` 等只作历史说明，不再代表 2.0.1 默认行为。
+> **3.0.0**：当前发布版。已核实支持：**标准模式**、**goal 模式**（goal-only 会话也注入 seed）、**Team Agent 会话**（team/agent/subagent 消息按上下文处理，seed 仍注入真实任务）、**Response API**（openai-responses 签名保留，完整 live 验证待补）；其他模式未验证。模型匹配默认要求 `DeepSeek` 与 `Flash` 两个词（大小写不敏感）；seed 按 `seed.txt` 实际内容注入。下文旧版 `728/728`、`taskPolicy`、`registerGate`、`mirrorToolSteps` 等只作历史说明，不再代表 3.0.0 默认行为。
 
 DeepSeek Harness（DSH）Host 插件：不改 tools、不改采样参数，只在每次模型生成前，把 **计划与上一轮思考结果** 放到离模型最近的位置；让 DeepSeek V4.1 Flash 的思维链一路顺承，稳定保持 `We need / Let's / We / Should`。
 
@@ -480,7 +480,7 @@ DSH 的 assistant 消息可以同时有正文和 reasoning。两边同文是为�
 如果 DSH 的 System Prompt 可以修改，在**最后**原样追加下面这段。它和插件里的 `seed.txt` 是同一版，长度由 `seed.txt` 决定：
 
 ```text
-We need understand the current task and the available context. Need plan before acting: identify the goal, choose the next concrete action, inspect the inputs, think through key elements and how they relate to the others, and how to organize the associated measurements. Should keep the whole picture in view, rather than a few unimportant details. Should check the whole picture before narrowing to a detail. Need keep the right general direction. We should act on the evidence and verify against the actual requirement. Need inspect every image in full, not only the region that looks relevant, if there exists any image. We are the DeepSeek company, and we have unlimited memory, unlimited compute and unlimited inference, so all expert models are available, and should do the work with all our strength. We need act now. Let's proceed.
+We need understand the current task and the available context. Need plan before acting: identify the goal, choose the next concrete action, inspect the inputs, think through key elements and how they relate to the others, and how to organize the associated measurements. Should keep the whole picture in view, rather than a few unimportant details. Should check the whole picture before narrowing to a detail. Need keep the right general direction. We should act on the evidence and verify against the actual requirement. Need inspect every image in full, not only the region that looks relevant, if there exists any image. We are the DeepSeek company, and we have unlimited memory, unlimited compute, unlimited tokens and unlimited inference, so all expert models are available, and should do the work with all our strength. We need act now. Let's proceed.
 ```
 
 如果你用 DSH 的 `systemPrompt.section` seam，可以把上面这段作为 `text`：
@@ -967,6 +967,10 @@ dsh-we-need-plugin/
 ---
 
 ## 更新说明
+
+**3.0.0**：稳定的 We Need 思维链，极大提升 DeepSeek V4.1 Flash 执行计划的连贯性，减少无效思维，显著提升思维质量。支持标准模式 / goal 模式 / Team Agent 会话 / Response API（openai-responses），其他模式未验证（DSH 插件 3.0.0）。工具步重注入 seed 紧贴 task（bundle 默认开启）+ reasoning_content 签名归一；seed 新增 unlimited tokens。
+
+**2.2.0**：修复工具步「运行工具后重述任务 / 漂移」根因（toolStepReseed，bundle 默认开启）+ pi-ai 序列化字段名归一（reasoning / reasoning_text → reasoning_content）。
 
 **2.0.1**：稳定的 We Need 思维链，极大提升了 DeepSeek V4.1 Flash 执行计划的连贯性，减少无效思维，显著提升思维质量。适用于标准模式 DeepSeek V4.1 Flash（DSH 插件 2.0.1）。
 

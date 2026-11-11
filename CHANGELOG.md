@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0.0
+
+- 升版 3.0.0：2.2 的工具步重注入 + 签名归一相对 2.1 是行为级变化，按主版本发布。bundle 默认 `toolStepReseed: true`，标准安装即生效。
+- seed 增强：unlimited 资源句新增 `unlimited tokens`（与 unlimited memory / compute / inference 并列）。
+- 简介补充已核实的模式支持：**标准模式**；**goal 模式**（`isTaskUser` deny-list  fall-through，goal-only 会话也注入 seed）；**Team Agent 会话**（team-message / agent-message / subagent-report 等归入 CONTEXT_SOURCE_KINDS 按上下文处理，seed 仍注入真实任务）；**Response API**（openai-responses：replaySignatureFor 保留 provider 原始 reasoning 签名；seed 消息按 completions 构造，responses wire 完整 live 验证待补）。其他模式未验证。
+- 全套件绿（injection / features / toolstep-reseed / signature-normalize / package）。
+
 ## 2.2.0
 
 - 修复工具步「运行工具后重述任务/漂移」根因：seed 是合成消息、DSH 不持久化进历史，旧 `injectSeed` 在工具步剥掉 seed 又不重注入，导致工具步请求丢失紧贴 task 的 WeNeed 锚点。新增 opt-in `toolStepReseed`：工具步分支复用首轮 `contexts→seed→task` 逻辑，把 seed 重新注入紧贴 task（含 isTarget 守卫）。live wire 确证每个工具步 seed 紧贴 task；语态两轮 letMe=0–1（修复前全程漂）。

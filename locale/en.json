@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "DSH We Need Plugin",
-    "description": "Stable We Need reasoning chain: greatly improves the continuity of DeepSeek V4.1 Flash execution plans, reduces wasted reasoning, and significantly improves reasoning quality. For standard-mode DeepSeek V4.1 Flash (DSH plugin 2.0.1)."
+    "description": "Stable We Need reasoning chain: greatly improves the continuity of DeepSeek V4.1 Flash execution plans, reduces wasted reasoning, and significantly improves reasoning quality. Supports standard mode / goal mode / Team Agent sessions / Response API (openai-responses); other modes unverified (DSH plugin 3.0.0)."
   }
 }

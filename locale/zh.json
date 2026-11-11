@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "DSH We Need Plugin",
-    "description": "稳定的 We Need 思维链，极大提升了 DeepSeek V4.1 Flash 执行计划的连贯性，减少无效思维，显著提升思维质量。适用于标准模式 DeepSeek V4.1 Flash（DSH 插件 2.0.1）。"
+    "description": "稳定的 We Need 思维链，极大提升 DeepSeek V4.1 Flash 执行计划的连贯性，减少无效思维，显著提升思维质量。支持标准模式 / goal 模式 / Team Agent 会话 / Response API（openai-responses），其他模式未验证（DSH 插件 3.0.0）。"
   }
 }
