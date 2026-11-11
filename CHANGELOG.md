@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.0
+
+- 修复工具步「运行工具后重述任务/漂移」根因：seed 是合成消息、DSH 不持久化进历史，旧 `injectSeed` 在工具步剥掉 seed 又不重注入，导致工具步请求丢失紧贴 task 的 WeNeed 锚点。新增 opt-in `toolStepReseed`：工具步分支复用首轮 `contexts→seed→task` 逻辑，把 seed 重新注入紧贴 task（含 isTarget 守卫）。live wire 确证每个工具步 seed 紧贴 task；语态两轮 letMe=0–1（修复前全程漂）。
+- 修复 pi-ai 序列化字段名漂移：上游用 `reasoning`/`reasoning_text` 字段回思考时，pi-ai 原样 replay 成该字段，网关只读 `reasoning_content` → 计划丢失。`replaySignatureFor` 在 openai-completions 分支把三个 plain 别名统一归一成 `reasoning_content`（JSON reasoning-details 签名保留，非 completions 不变），恢复 1.0.9 的归一化行为。
+- 新增 tests/toolstep-reseed.test.mjs（off 默认/on 紧贴/idempotent 不累积/non-target 不注入）与 tests/signature-normalize.test.mjs；全套件绿。
+- 默认契约不变：`toolStepReseed` 默认 false，需配置开启；mirror 默认 false。
+
 ## 2.1.0
 
 - 承重墙（方案 A）：注入决策写入持久外部审计 `~/.dsh/weneed-audit.jsonl`（ts/version/provider/model/purpose/reason/injected/seedHash/taskIndex/taskHash）。第三方插件经核实不能写 in-log 插件记录（`appendPluginRecord` 仅第一方）、不能插入 assistant 轮，故采用外部审计 + 离线读取工具 `bin/weneed-audit-read.mjs` 取证；in-log 持久化需第一方支持（已记缺口）。

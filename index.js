@@ -28,7 +28,7 @@ const TOOL_STEP_ANCHOR = "We need continue from the tool result. We need keep th
 const TASK_POLICY = 'Reasoning register for this task: start the plan with We need or Need; use Let\'s for the next action; keep the planning collective, concrete, and evidence-first.';
 const TASK_POLICY_HEAD = TASK_POLICY.slice(0, 40);
 const SEED_HEAD = SEED.slice(0, 48);
-const PLUGIN_VERSION = '2.1.0';
+const PLUGIN_VERSION = '2.2.0';
 const SEED_HASH = createHash('sha256').update(SEED).digest('hex').slice(0, 16);
 // External injection audit (方案 A): third-party plugins cannot write in-log
 // plugin records (appendPluginRecord is first-party-only, session README:72)
@@ -315,8 +315,14 @@ function replaySignatureFor(message, index) {
     ? replay.blocks[index]?.thinkingSignature
     : undefined;
   if (original !== undefined) {
-    if (!completions && original === 'reasoning_content') return undefined;
-    return original;
+    if (!completions) return original === 'reasoning_content' ? undefined : original;
+    // The gateway reads reasoning_content only, but pi-ai replays whichever
+    // field name the response used (reasoning/reasoning_text). Normalize the
+    // plain aliases back so the plan survives the tool-step round trip; leave
+    // JSON reasoning-details signatures for pi-ai's preserved-details path.
+    return ['reasoning', 'reasoning_content', 'reasoning_text'].includes(original)
+      ? 'reasoning_content'
+      : original;
   }
   return completions ? 'reasoning_content' : undefined;
 }
@@ -887,7 +893,7 @@ function seedMessage(provider, model) {
   };
 }
 
-function injectSeed(messages, options, modelConfig, targetRules = DEFAULT_TARGET_RULES, matchName = false, compactionRegister = 'we-need') {
+function injectSeed(messages, options, modelConfig, targetRules = DEFAULT_TARGET_RULES, matchName = false, compactionRegister = 'we-need', toolStepReseed = false) {
   const cleaned = messages.filter((message) => !isSeed(message));
   // purpose:'compaction' is the authoritative host signal; text sniff is fallback.
   if (options.purpose === 'compaction' || isCompactionRequest(cleaned)) {
@@ -898,7 +904,33 @@ function injectSeed(messages, options, modelConfig, targetRules = DEFAULT_TARGET
     };
   }
   if (isToolStep(cleaned[cleaned.length - 1]) || isToolStepAfterContexts(cleaned)) {
-    return { messages: orderContextsBeforeTask(cleaned), injected: false, reason: 'tool-step' };
+    const ordered = orderContextsBeforeTask(cleaned);
+    // The seed is synthetic and DSH does not persist it in history; stripping it
+    // above leaves tool steps with no WeNeed anchor, so the model loses the
+    // thread and re-states the task. Reseed keeps the anchor adjacent to the
+    // task on every tool step, matching the first-turn injection.
+    if (toolStepReseed) {
+      const toolTaskIndex = lastRealUserIndex(ordered);
+      if (toolTaskIndex >= 0 && isTarget(options.model, modelConfig?.name, modelConfig?.target, targetRules, matchName)) {
+        const task = ordered[toolTaskIndex];
+        const after = ordered.slice(toolTaskIndex + 1);
+        const contexts = after.filter(isContextUser);
+        const rest = after.filter((message) => !isContextUser(message));
+        return {
+          messages: [
+            ...ordered.slice(0, toolTaskIndex),
+            ...contexts,
+            seedMessage(options.provider, options.model),
+            task,
+            ...rest,
+          ],
+          injected: true,
+          reason: 'tool-step',
+          taskIndex: toolTaskIndex,
+        };
+      }
+    }
+    return { messages: ordered, injected: false, reason: 'tool-step' };
   }
   if (options.purpose !== undefined) {
     return { messages: cleaned, injected: false, reason: 'auxiliary' };
@@ -1070,7 +1102,7 @@ class WeNeedNativeAdapter {
   async *stream(options) {
     const modelConfig = this.configFor(options.provider, options.model) ?? {};
     const filtered = filterSkillCatalog(options.messages ?? []);
-    const { messages, reason } = injectSeed(filtered, options, modelConfig, this.config.targetRules, this.config.matchName === true, this.config.compactionRegister);
+    const { messages, reason } = injectSeed(filtered, options, modelConfig, this.config.targetRules, this.config.matchName === true, this.config.compactionRegister, this.config.toolStepReseed === true);
     const policyEligible = reason === 'user-task'
       || (reason === 'tool-step'
         && lastCompactionIndex(messages) < lastRealUserIndex(messages));
@@ -1306,7 +1338,7 @@ export function apply(ctx, config = {}) {
       }
       const filtered = filterSkillCatalog(options.messages ?? []);
       const filterChanged = filtered !== (options.messages ?? []);
-      const injected = injectSeed(filtered, options, {}, config.targetRules, config.matchName === true, config.compactionRegister);
+      const injected = injectSeed(filtered, options, {}, config.targetRules, config.matchName === true, config.compactionRegister, config.toolStepReseed === true);
       auditRecord({
         provider: options.provider, model: options.model, purpose: options.purpose,
         reason: injected.reason, injected: injected.injected === true,
