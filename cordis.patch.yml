@@ -3,6 +3,13 @@
       name: 'dsh-we-need-plugin'
       config:
         intercept: true
+        mirror: false
+        mirrorToolSteps: false
+        toolStepAnchor: off
+        toolStepReasoning: anchor-seed
+        postCompactionSeed: reasoning
+        compactionRegister: we-need
+        mirrorScope: task
         matchName: false
         targetRules:
           - [deepseek, flash]

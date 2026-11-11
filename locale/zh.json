@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "DSH We Need Plugin",
-    "description": "默认按上游 model id 里的 DeepSeek + Flash 筛选（provider 不限），注入 seed.txt 的实际内容；seed 长度不固定。README 有重要信息，请先读「使用技巧」。默认按上游 model id 里的 DeepSeek + Flash 筛选，provider 不限。作者实测后认为：DeepSeek 可能是在算力和内存极其紧张的情况下训练的，每个训练模块的内存预算很小；工具调用一多、工程文件一多，就会占用大量推理资源，导致无法调用足够多的内部专家模型。算力宽松、专家模型调用多时，它更常说 We，表示自己在协调多个专家；资源紧张、专家调用受限时，语态就退化成 I / Let me，表现为雷霆大思考。凭单体能力很难又好又快地完成复杂工作，所以与其说「无限 token / 神秘提示词」，不如说「无限内存 / 无限算力」更贴近本质。"
+    "description": "稳定的 We Need 思维链，极大提升了 DeepSeek V4.1 Flash 执行计划的连贯性，减少无效思维，显著提升思维质量。适用于标准模式 DeepSeek V4.1 Flash（DSH 插件 2.0.1）。"
   }
 }

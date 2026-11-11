@@ -1,10 +1,14 @@
 # DSH We Need Plugin
 
-> **0.7.1**：seed 长度不再固定，插件按 `seed.txt` 的实际内容注入，非空即可；模型匹配仍保持 `DeepSeek + Flash`，Pro 暂不纳入。下文旧版 0.7 文档中的 `728/728`、以及把 Pro 纳入的示例仅作历史说明。
+> **适用于标准模式 DeepSeek V4.1 Flash（DSH 插件 2.0.1）。**
+>
+> 稳定的 We Need 思维链，极大提升了 DeepSeek V4.1 Flash 执行计划的连贯性，减少无效思维，显著提升思维质量。
 
-DeepSeek Harness（DSH）Host 插件：在模型请求的最后一条真实 user task 之前，插入一条长度由 `seed.txt` 决定的 WeNeed assistant seed，让 DeepSeek Flash 更容易进入 `We need / Let's / We / Should` 的思维风格。
+> **2.0.1**：当前发布版。模型匹配默认要求 `DeepSeek` 与 `Flash` 两个词（大小写不敏感）；seed 按 `seed.txt` 实际内容注入。下文旧版 `728/728`、`taskPolicy`、`registerGate`、`mirrorToolSteps` 等只作历史说明，不再代表 2.0.1 默认行为。
 
-> 这是概率性引导，不是硬开关。它提高触发概率，但不保证每一次都进入 WeNeed 寄存器。
+DeepSeek Harness（DSH）Host 插件：不改 tools、不改采样参数，只在每次模型生成前，把 **计划与上一轮思考结果** 放到离模型最近的位置；让 DeepSeek V4.1 Flash 的思维链一路顺承，稳定保持 `We need / Let's / We / Should`。
+
+> 这是概率性引导，不是硬开关。它提高触发概率，但不保证每一次都进入 We Need 寄存器。
 
 - 项目主页：https://github.com/Lichadai/dsh-we-need-plugin
 - 讨论区：https://github.com/Lichadai/dsh-we-need-plugin/discussions
@@ -13,6 +17,130 @@ DeepSeek Harness（DSH）Host 插件：在模型请求的最后一条真实 user
 > **第一次使用请先读 [0.5 使用技巧](#05-使用技巧先读这个)**：工具尽量后调用，先思考/计划，不要过早调用工具。
 
 > 可选增强：如果你能修改 System Prompt，建议把 [5.3](#53-可选增强把-seed-放到-system-prompt-最后) 里的 seed 原样追加到 System Prompt 的最后，触发概率可能更高。它不是必选项，注意事项见 5.3。
+
+---
+
+## 技术说明：DSH 请求字段与内容流转（官方反馈版）
+
+> 本节只描述 2.0.1 实际发送的字段、消息顺序和插入点，不展开 seed 文本；Qoder/DSH 的差异也列在这里，便于 DSH 官方判断插件边界。
+
+### T1. 一次请求从头到尾
+
+```text
+DSH agent loop
+  -> system/developer + runtime-context + skill-catalog + time-context
+  -> user task + assistant/tool history
+  -> llm/stream(options)
+       -> target model check
+       -> filterSkillCatalog()
+       -> injectSeed()
+            new user task: contexts -> assistant seed -> user task
+            tool step: latest assistant(tool_calls).reasoning_content += anchor + seed
+            compaction: append COMPACTION_REGISTER (purpose=compaction)
+            post-compaction: seed before new task / anchor after checkpoint
+       -> normalizeReasoningChannelMessages()
+       -> stripToolCallAssistantContent()
+       -> sanitizeProgramMessages() / sanitizeToolDefinitions()
+       -> wireMessage() (custom adapter) or original provider adapter (delegated)
+  -> upstream model
+```
+
+关键点：插件不新增 tool 消息，不改 tool result，不拆 tool_call/tool result 配对；只改现有 assistant 的 reasoning、在 task 前插入一条 assistant seed，或在压缩指令后追加风格要求。
+
+### T2. DSH 字段名与顺序
+
+| 消息 | 字段与顺序 | 2.0.1 的处理 |
+|---|---|---|
+| system / developer | `role`, `content` | `sanitizeProgramMessages()` 只处理 program text；不改 user/assistant/tool result |
+| user task | `role`, `content`, `source.kind` | 最后一个 task 前插入 assistant seed；contexts 移到 seed 前 |
+| assistant seed | `role`, `content`, `reasoning_content` | `content` 与 `reasoning_content` 同文；不出现 `tool_calls`；只在当前请求生效，不写回会话 |
+| assistant tool-call | `role`, `content`, `reasoning_content`, `tool_calls` | `content` 必须是 `""`；`reasoning_content` 保留该步计划并追加 anchor + seed；`tool_calls` 无 `index` |
+| tool result | `role`, `content`, `tool_call_id` | 原样保留；id 与 assistant tool_calls 一一对应 |
+
+DSH assistant tool-call 的 key 顺序：
+
+```text
+[role, content, reasoning_content, tool_calls]
+```
+
+DSH tool_call 对象：
+
+```text
+[id, type, function[name, arguments]]
+```
+
+- DSH 工具步的 `content` 是空字符串 `""`，不是 `null`，不是数组。
+- `reasoning_content` 是字符串；不出现 `reasoning_details` / `reasoning` 别名。
+- `arguments` 是 JSON 字符串。
+- 一个 assistant 只保留一个 reasoning block，避免上游只读取第一个签名。
+
+### T3. Qoder 与 DSH 的 wire 差异
+
+| 项 | Qoder | DSH |
+|---|---|---|
+| assistant tool-call key 顺序 | `role`, `content`, `tool_calls`, `reasoning_content` | `role`, `content`, `reasoning_content`, `tool_calls` |
+| tool_call 的 `index` | 必须有 | 必须没有 |
+| 工具步 `content` | 通常 mirror 当前 reasoning | 必须是 `""` |
+| reasoning 来源 | `reasoning_content`，必要时 mirror 到 content | `reasoning_content` 字符串 |
+| 历史回放 | 全量历史 mirror | 当前 task/checkpoint 之后才改写 |
+
+这也是为什么插件在 DSH 上不采用 Qoder 的 content mirror：DSH 的 tool-call assistant 必须保持 `content=""`；把计划放进 content 会破坏 DSH 契约，也容易让最近的可见正文压过 reasoning。
+
+### T4. 我们在哪里插入或改写
+
+| 位置 | 函数 | 动作 | 新增消息 |
+|---|---|---|---|
+| 新 user task 前 | `injectSeed()` / `seedMessage()` | 插入 1 条 assistant seed；`content` + `reasoning_content` 同文；contexts 置前 | 是，1 条 |
+| 工具步最新 tool-call assistant | `appendToolStepReasoning()` | 在该 assistant 的 `reasoning_content` 末尾追加 `TOOL_STEP_ANCHOR` + seed；保留原计划 | 否 |
+| 工具步上下文顺序 | `orderContextsBeforeTask()` | 把 task 后出现的 runtime/skill/time contexts 移回 task 前 | 否 |
+| 压缩请求 | `appendCompactionRegister()` | 在摘要指令末尾追加 `COMPACTION_REGISTER`；checkpoint 使用 We/Let's 语态 | 否 |
+| 压缩后 | `anchorAfterCompaction()` | 有新 task 时走 task 前 seed；无新 task 且存在 tool-call assistant 时，把 seed 补进其 reasoning | 否 |
+| reasoning 通道归一 | `normalizeReasoningChannelMessages()` | 合并重复 reasoning block；删除 `reasoning_content` / `reasoning_details` 别名；保留 provider 原始 replay signature | 否 |
+| tool-call assistant 正文 | `stripToolCallAssistantContent()` | adapter 与 delegated 路径发 wire 前删除 text block，保持 `content=""`；保留 reasoning、tool_calls、tool result | 否 |
+| system/developer/tool 定义 | `sanitizeProgramMessages()` / `sanitizeToolDefinitions()` | 只对 program text 做中性化；user task、assistant 历史、tool result 不改 | 否 |
+| skill catalog | `filterSkillCatalog()` | 删除指定的 skill catalog 行；不改 task | 否 |
+| task 入口 | `isTaskUser()` / `CONTEXT_SOURCE_KINDS` | 已知 context kind 排除；`user`、`goal`、`schedule`、`tool-goal` 及未知 kind 走内容判断 | 否 |
+
+### T5. 工具步的实际内容流转
+
+```text
+... user task ...
+assistant(tool_calls):
+  content = ""
+  reasoning_content = "<模型本步计划>\n\n<TOOL_STEP_ANCHOR>\n\n<seed>"
+  tool_calls = [ { id, type: "function", function: { name, arguments } } ]
+tool:
+  content = "<工具返回文本>"
+  tool_call_id = "<同一个 id>"
+```
+
+- 不新增 assistant 消息；不把 seed 放在 tool result 后面。
+- 下一个请求中，离模型最近的计划材料就是该 assistant 的 `reasoning_content`。
+- 如果入站历史里 tool-call assistant 的 `content` 已有 text（旧 mirror、旧 provider 或旧配置留下），`stripToolCallAssistantContent()` 会在发 wire 前清除；显式 `mirrorToolSteps: true`、`toolStepAnchor: content|both`、`postCompactionSeed: content|both` 是例外，保留原模式。
+
+### T6. 压缩与 goal 的特殊路径
+
+压缩：
+
+- DSH 摘要请求带 `purpose: "compaction"`。
+- 插件只在摘要指令末尾追加风格要求，不在摘要请求里插 seed。
+- checkpoint 是一条 user 消息，包含 `automatically generated checkpoint` 与 8 个固定章节；它可能压过新 task，因此插件在 checkpoint 后的新 task 前再放 seed。
+- checkpoint-only 且没有 tool-call assistant 时没有安全落点，插件不强行插消息（no-op）。
+
+goal：
+
+- goal 消息的 `source.kind` 是 `goal`，不是 `user`。
+- 2.0.1 的 task 入口使用 deny-list：已知 context kind 排除 `user` 直接作为 task，`goal` / `schedule` / `tool-goal` / 未知 kind 走内容兜底。
+- 因此 goal-only 会话也会在 goal round 前注入 seed；team/agent/subagent/审批/回复等仍按 context 处理。
+
+### T7. 给 DSH 官方的契约建议
+
+1. **task 入口需要稳定分类**：`source.kind` 已有 `user`、`goal`、`schedule`、`team-message`、`agent-message`、`subagent-settled`、`compact-checkpoint` 等多种值。建议提供 `isTask` / `taskKind` 或一份权威的 kind 表，避免插件用 allowlist/denylist 猜。
+2. **provider 私有 replay 字段需要隔离**：`source.replayState.blocks[].thinkingSignature` 在 `openai-completions` 是字段名，在 `openai-responses` 是 reasoning item JSON。建议 adapter 暴露当前 wire api，或在 planner 层禁止插件改写 provider 私有签名。
+3. **工具步 content 契约建议在 adapter 层校验**：`content=""`、tool_calls 无 `index`、tool result 配对，最好由 DSH adapter 统一保证，而不是每个插件各自清理。
+4. **压缩需要可挂载的 hook**：`purpose=compaction` 已能识别；如果能在 checkpoint 生成后提供“安全锚点”事件，插件就不需要猜 checkpoint-only / no tool-call assistant 的落点。
+5. **不建议要求插件改写历史**：插件应只做 task 前 seed、工具步 anchor、压缩 register 三类增量；历史纠正交给 DSH 的 context/compaction 机制。
+6. **辅助请求需要明确 purpose**：标题、建议、压缩等调用应保持稳定标记，插件才能可靠跳过，不污染主对话。
 
 ---
 
@@ -26,57 +154,44 @@ DeepSeek Harness（DSH）Host 插件：在模型请求的最后一条真实 user
 
 ## 0. 先看这个
 
-### 0.1 WeNeed 不是某一个模型，而是一类思维风格
+### 0.1 核心问题不是模型能力，而是思维链中断
 
-WeNeed 不是 DeepSeek 独有的私有开关，也不是只能由某一家模型产生。它是一类以 **`We need`、`Let's`、`We`、`Should`** 作为句子开头为主要特征的思维风格：
+DeepSeek V4.1 Flash 的注意力范围比较窄。它每次生成时，会优先抓住离当前思考位置最近的材料；如果计划、上一轮 reasoning 被工具 schema、工具调用、工具结果、skill catalog、工作区文件等隔开，它就会把注意力落在最近的那一块。
 
-```text
-We need understand the task...
-Need inspect the inputs...
-Let's plan before acting...
-Should verify against the requirement...
-```
+- 如果最近的是工具调用，它就容易反复纠结工具选择、参数和结果，围着工具打转；
+- 如果最近的是 skill/文件，它就容易反复读、反复比对，迟迟不推进；
+- 计划本身没有消失，只是离当前生成点太远，没有被当成“当前思考材料”。
 
-这种风格通常有三个特征：
+所以问题不是“专家模型调用不积极”，也不是模型不会做；而是 **思维链在工具步/上下文切换处断了**。只要每一次都把计划以及上一轮思考结果移到离模型最近的位置，它就能沿着上一条思路继续，稳定保持 `We need / Let's / We / Should`。
 
-- 注意力比较稳；
-- 愿意连续调用工具推进任务；
-- 很少陷入“雷霆大思考”——反复检查、反复自我修正、纠结细节。
+### 0.2 三个最常见的“隔断源”
 
-一旦句子里大量出现 **`I`、`Let me`、`I will`**，通常说明模型的思维力被过多的混杂信息冲散了，开始从“推进任务”退化成“围着细节打转”。
+实际使用 DeepSeek 时，最容易把计划和思考推远的是三类信息：
 
-### 0.2 三个最常见的干扰源
-
-实际使用 DeepSeek 时，最容易把注意力冲散的是三类信息：
-
-1. **工具信息过大**：工具 schema、工具调用历史、工具结果太多；
+1. **工具信息过大/过近**：工具 schema、工具调用历史、工具结果太多，工具调用会成为离模型最近的材料；
 2. **工作区文件夹混杂**：长期在一个大目录里工作，项目多、文件多、临时文件多；
 3. **skill 信息过大**：skill catalog 很长，或加载了很长的 skill 正文。
 
-这些信息本身不是没用，但一旦过于庞大，就会把模型拉到细节里，失去对大局和任务清单的把控。表现就是“雷霆大思考”：反复读、反复比、反复改，迟迟不推进。
+这些信息本身不是没用，但它们会占据“最近位置”。一旦工具调用或 skill 细节成为最近材料，模型就会把注意力放在那里，失去对大局和任务清单的把控。表现就是反复读、反复比、反复选工具，迟迟不推进；这就是常说的“雷霆大思考”。
 
 一个很实际的印证：
 
-- 以 `Let me` 为主的涣散思维，完成任务时经常不知道自己该更新任务清单；
-- 以 `We need / Let's` 为主的 WeNeed 模式，通常会主动完成任务，并知道更新任务清单；
-- 但即使是 WeNeed 模式，有时也会忘记更新任务清单——这往往说明上下文里无意义、与思维不相关的混杂信息太多，已经影响了思维力和注意力。
+- 以 `L3t me` 为主的涣散思维，完成任务时经常不知道自己该更新任务清单；
+- 以 `We need / Let's` 为主的 We Need 模式，通常会主动完成任务，并知道更新任务清单；
+- 但即使是 We Need 模式，有时也会忘记更新任务清单——这往往说明上下文里无意义、与思维不相关的混杂信息太多，已经把计划推远了。
 
 ### 0.3 使用 DeepSeek 的建议
 
 - 工作区保持干净，项目尽量少；及时清空不必要的文件夹、临时文件和旧项目。
 - 工具调用时间往后延：在 skill 目录不是特别大时，先让模型读 skill、做规划，最后再调用工具。不要让庞大的工具基座信息先冲散思维。
 - 工具很多、文件夹很杂、skill 很长时，优先清理上下文；不要只依赖 seed。
-- 出现 `Let me`、`I`、`I will` 时，先怀疑工具调用过多，或信息获取不当、过大；不要只怪模型。
+- 出现 `L3t me`、`I`、`I w1ll` 时，先怀疑工具调用过多，或信息获取不当、过大；不要只怪模型。
 
-### 0.4 适用边界：只适用于 DeepSeek Harness
+### 0.4 适用边界：DSH 原生请求
 
-本插件只针对 **DeepSeek Harness**。
+本插件只处理 **DeepSeek Harness** 的原生 `llm/stream` 请求。
 
-测试过 Qoder：Qoder 在使用第三方 API 时，`reasoning_content` 不回传。上下文内容还在，但思维过程会丢失，所以同样的 seed 在 Qoder 上不能稳定生效。
-
-那种情况只能走代理/镜像路线：把上下文里的内容克隆到思维字段里，让思维链不中断。这是另一条技术路线，不在本插件的范围内。
-
-补丁说明：作者不是专业编程人员，对 reasoning 回传的底层机理可能理解不完整，也可能没有找到 Qoder 正确的回传方式，因此上面的判断可能是误判。如果 Qoder 后续版本提供了 reasoning 回传能力，请以实际版本为准。
+Qoder 不在本插件范围内：它需要单独的代理/镜像路线，把上下文里的计划搬到模型实际读取的通道里，才能让思维链不中断。Qoder 的具体回传行为以实际版本和代理审计为准，不能把本插件的 DSH 结论直接套到 Qoder。
 
 ---
 
@@ -107,7 +222,7 @@ Should verify against the requirement...
 
 - 工作区保持干净，项目少，临时文件少。
 - 工具多时，优先清理不用的工具和配置。
-- 出现 `Let me`、`I`、`I will` 时，先减少工具和信息，不要只加 seed。
+- 出现 `L3t me`、`I`、`I w1ll` 时，先减少工具和信息，不要只加 seed。
 - seed 是概率性增强，不替代上下文管理。
 
 ### 0.6 模型筛选规则：什么时候生效
@@ -131,11 +246,13 @@ const text = String(modelId ?? '').toLowerCase();
 
 ```text
 1. model id（或显式 matchName 时的 name）命中 targetRules；
-2. 不是插件自己的 provider，且 purpose 为空；
-3. 不是 tool step、压缩请求、标题/建议调用；
+2. 不是插件自己的 provider；
+3. 不是标题/建议等辅助请求（purpose 非空且不是压缩请求）；
 4. target 没有被设成 false；
 5. DSH 有 ctx.llm.prepareCall（当前版本有）。
 ```
+
+命中后并不等于“每条请求都插 task seed”：新 task 插 seed；工具步追加 anchor+seed；压缩请求追加 `COMPACTION_REGISTER`；标题/建议等辅助请求完全跳过。
 
 **不需要** `interceptModels` 路由，也不需要按 provider 配置 baseURL/key。没有路由时走 delegated 模式，见 0.7。
 
@@ -178,39 +295,33 @@ const text = String(modelId ?? '').toLowerCase();
 
 ## 1. 项目目的
 
-DeepSeek V4.1 Flash 在一些特定语句的引导下，会进入一种可识别的 WeNeed 思维链：
+DeepSeek V4.1 Flash 的注意力窄。计划和上一轮思考一旦被工具调用/结果隔开，它就会把最近的工具材料当成当前重点，思维链断掉，表现为反复选工具、反复检查、迟迟不推进。
 
-```text
-We need understand the task...
-Need inspect...
-Let's plan...
-Need check...
-```
+本项目把这个现象做成 DSH 原生插件：不依赖外部 HTTP 代理，不修改工具，不修改采样参数，只在每次模型生成前，把计划与上一轮思考结果放到离模型最近的位置：
 
-本项目把这个现象做成一个 DSH 原生插件：不依赖外部 HTTP 代理，不修改工具，不修改采样参数，只在最终请求的 assistant 消息位置放入一段 seed.txt 中的 seed。
+- 新 task：assistant seed 紧贴 task；
+- 工具步：最新 `assistant(tool_calls)` 的 `reasoning_content` 追加短 anchor + 完整 seed；
+- 压缩：压缩请求追加 We Need 风格要求，checkpoint 用 `We need / Let's need`；压缩后新 task 前再放 seed。
+
+这样模型每一步看到的最近材料都是“自己的计划”，思维链可以顺承，稳定保持 `We need / Let's / We / Should`。
+
+**这不是“专家模型调用不积极”的问题，也不是模型能力不足；是 reasoning 与当前生成点之间的距离问题。**
 
 ### 灵感来源
 
-在 Kimi K3.1 Pro 与 DeepSeek V4.1 Flash 的上下文继承实验里，Kimi 经常产生 `We need / Let's` 风格的计划；当这段 assistant 历史被带进 DeepSeek 的上下文时，DeepSeek 有时会延续这种语态。
-
-插件把这个观察压缩成一个更稳定的形式：
-
-```text
-不依赖 Kimi 先说话
-→ 直接把一段 WeNeed assistant seed 放到 DeepSeek 的 task 前面
-→ 让 DeepSeek 把它当成自己上一轮的思维延续
-```
+在 Kimi K3.1 Pro 与 DeepSeek V4.1 Flash 的上下文继承实验里，Kimi 经常产生 `We need / Let's` 风格的计划；当这段 assistant 历史被带进 DeepSeek 的上下文时，DeepSeek 有时会延续这种语态。这是“把计划放到最近位置”的早期观察。
 
 ### 设计假设
 
 ```text
-1. seed 放在 assistant 角色，比放在 user/system 更像“模型自己的上一轮”
-2. content 与 reasoning_content 双通道同文，覆盖可见回复和思考通道
-3. seed 紧贴 task，前面只放 runtime / skill / time context
-4. 如果同时在 System Prompt 里加一段 WeNeed 引导，触发概率会更高
+1. 计划/上一轮 reasoning 必须离当前生成点最近，不能被工具调用/结果隔开
+2. seed 放在 assistant 角色，比放在 user/system 更像“模型自己的上一轮”
+3. 新 task 用 content 与 reasoning_content 双通道同文
+4. 工具步只改 reasoning_content，content 保持空，tool pair 不变
+5. 压缩 checkpoint 本身也用 We Need 风格，避免 checkpoint 压过新 task
 ```
 
-第 4 条是可选增强，不是本插件的默认行为；system prompt 改动影响所有步骤，也可能和 DSH 的身份/Agent Teams 文本冲突，需要单独 A/B。
+第 5 条是 2.0.1 保留的 1.0.9 压缩摘要风格化；System Prompt 追加段仍是可选增强，不是默认行为；它影响所有步骤，也可能和 DSH 的身份/Agent Teams 文本冲突，需要单独 A/B。
 
 ---
 
@@ -218,21 +329,45 @@ Need check...
 
 做：
 
-- 在 `llm/stream` 层拦截目标模型请求；
-- 在最后一条真实 user task 前插入 1 条 assistant seed；
-- 同时写 `content` 和 `reasoning_content`，长度与 `seed.txt` 相同；
-- 自定义 adapter 路线保持 DSH 的工具步字段契约：`content=""`、`tool_calls` 无 `index`、tool pair 完整；delegated 路线保持原 adapter 行为；
-- 旧 seed 先剥离，再插新的，请求内最多 1 条；
+- 在 `llm/stream` 层拦截目标模型请求（默认 `targetRules: [[deepseek, flash]]`）；
+- 新 task 前插入 1 条 assistant seed，`content` 与 `reasoning_content` 同文；
+- 工具步在最新 `assistant(tool_calls)` 的 `reasoning_content` 追加 `TOOL_STEP_ANCHOR + seed`；`content` 保持 `""`；不新增消息，不改 `tool_calls` / id / arguments / tool result，tool pair 完整；
+- 压缩请求追加 `COMPACTION_REGISTER`，让 checkpoint 使用 `We need / Let's need`；压缩后新 task 前再放 seed；checkpoint-only 且无 tool-call assistant 时 no-op（已知，无安全落点）；
+- 任务识别只认 `source.kind === 'user'`；图片/文件上传仍是 task；
 - 不需要新增 provider，也不需要按 provider 配路由；任何 provider 只要模型 id 命中就生效。
 
 不做：
 
 - 不修改 `tools` / `tool_choice` / `temperature` / `max_tokens`；
 - 不把 seed 写回 DSH 会话历史；
-- 不在工具步追加 seed；
-- 不做 content mirror；
-- 不记录 API key、请求头、会话日志或 telemetry；
-- 不保证首步一定进入 WeNeed。
+- 不在工具步新增消息，也不在 tool result 后插第二个 task seed；
+- 不做运行期 `L3t me` 关键词检测 / 自动 drift 再注入；
+- 不做 token 计数、不做统计；
+- 不保证首步一定进入 We Need；语态是概率性的，seed 是启动器，不是硬开关；
+- 不处理 Qoder（见 0.4）。
+
+### 2.0.1 默认配置
+
+```yaml
+- id: dsh-we-need-plugin
+  config:
+    intercept: true
+    mirror: false
+    mirrorToolSteps: false
+    toolStepAnchor: off
+    toolStepReasoning: anchor-seed
+    postCompactionSeed: reasoning
+    compactionRegister: we-need
+    mirrorScope: task
+    matchName: false
+    targetRules:
+      - [deepseek, flash]
+```
+
+- `toolStepReasoning: anchor-seed`：工具步只改最新 `assistant(tool_calls)` 的 `reasoning_content`，内容是 `TOOL_STEP_ANCHOR + 完整 seed`；`content` 保持 `""`，tool pair 不变。
+- `postCompactionSeed: reasoning`：压缩后如果没有新 task、但 checkpoint 后有 tool-call assistant，就把 seed 补到它的 reasoning；如果有新 task，走正常 task 前 seed。
+- `compactionRegister: we-need`：压缩请求追加风格要求，checkpoint 摘要用 `We need / Let's need`，并保留路径、命令、数字。
+- `mirror` / `mirrorToolSteps` / `toolStepAnchor` 的旧组合是历史 A/B 选项，2.0.1 默认关闭；不要把它们当成当前主路径。
 
 ---
 
@@ -244,12 +379,22 @@ DSH agent loop
   → 发出 GenerateOptions
   → llm/stream waterfall
        → 插件只看 options.model（不看 provider）
-       → 命中 targetRules：在 task 前插入 assistant seed
+       → 命中 targetRules：
+            新 task: contexts -> assistant seed -> user task
+            tool step: 最新 assistant(tool_calls) 的 reasoning_content += anchor + seed
+            compaction request: 追加 COMPACTION_REGISTER
        → 有 interceptModels 路由？
             是 → 插件用自己的 OpenAI-compatible adapter 发请求
             否 → ctx.llm.prepareCall + prepared.stream 交回原 provider adapter
   → DSH 继续工具循环
 ```
+
+按请求形态：
+
+1. **新 user task**：contexts 在 seed 前，seed 紧贴 task；seed 同时写 `content` 和 `reasoning_content`。
+2. **工具步**：不改工具结果，不改 tool pair；只把最近一条 `assistant(tool_calls)` 的 `reasoning_content` 变成“原计划 + anchor + seed”，`content` 保持空。下一次生成时，离模型最近的材料就是它自己的计划。
+3. **压缩请求**：`purpose=compaction`，插件追加 `COMPACTION_REGISTER`，让 checkpoint 用 We Need 语态，并保留路径/命令/数字。
+4. **压缩后**：有新 task 就正常在 task 前放 seed；没有新 task 但 checkpoint 后有 tool-call assistant，就把 seed 补到它的 reasoning；checkpoint-only 且没有 tool-call assistant 时没有安全落点，不强行插消息（已知 no-op）。
 
 没有命中时：
 
@@ -304,10 +449,11 @@ if (SEED.length === 0) throw ...
 | `content` 通道 | 可见回复通道的 prefill | 是 |
 | `reasoning_content` 通道 | 思考通道的 prefill | 是 |
 | System Prompt 追加段 | 全局语态引导，影响所有步骤 | 否，可选 |
-| 工具步 `reasoning_content` | 模型自己的工具步计划，会被下一次请求继承 | 不注入，只继承 |
-| 压缩后的新 task 前 | 压缩后重新锚定一次 | 是 |
-| 压缩请求本身 | 摘要/压缩调用 | 否 |
-| 标题/建议等辅助调用 | `purpose` 非空或极短请求 | 否 |
+| 工具步 `reasoning_content` | 最新 `assistant(tool_calls)` 追加 `anchor + seed`；`content` 保持空 | 是 |
+| 压缩请求本身 | 追加 `COMPACTION_REGISTER`，checkpoint 用 `We need / Let's need` | 是（目标模型） |
+| 压缩后的新 task 前 | 正常在 task 前放 seed | 是 |
+| checkpoint-only + 无 tool-call assistant | 没有安全落点，不强行插消息 | no-op（已知） |
+| 标题/建议等辅助调用 | `purpose` 非空且不是压缩请求，或极短请求 | 否 |
 
 ### 5.1 task 前 assistant seed
 
@@ -334,7 +480,7 @@ DSH 的 assistant 消息可以同时有正文和 reasoning。两边同文是为�
 如果 DSH 的 System Prompt 可以修改，在**最后**原样追加下面这段。它和插件里的 `seed.txt` 是同一版，长度由 `seed.txt` 决定：
 
 ```text
-We need understand the current task and the available context. Need plan before acting: identify the goal, choose the next concrete action, inspect the inputs, think through how every element relates to the others, and how to organize the associated measurements. Need inspect every image and file in full, not only the region that looks relevant. Should check the whole input before narrowing to a detail. Should keep the whole picture in view, rather than a few unimportant details. We should act on the evidence and verify against the actual requirement. We are the DeepSeek company, and we have unlimited token. Should do the work with all our strength. Need keep the right general direction. We need act now. Let's proceed.
+We need understand the current task and the available context. Need plan before acting: identify the goal, choose the next concrete action, inspect the inputs, think through key elements and how they relate to the others, and how to organize the associated measurements. Should keep the whole picture in view, rather than a few unimportant details. Should check the whole picture before narrowing to a detail. Need keep the right general direction. We should act on the evidence and verify against the actual requirement. Need inspect every image in full, not only the region that looks relevant, if there exists any image. We are the DeepSeek company, and we have unlimited memory, unlimited compute and unlimited inference, so all expert models are available, and should do the work with all our strength. We need act now. Let's proceed.
 ```
 
 如果你用 DSH 的 `systemPrompt.section` seam，可以把上面这段作为 `text`：
@@ -355,15 +501,21 @@ systemPrompt.section({
 - 它会影响所有步骤，可能和身份/Agent Teams 文本冲突；
 - 必须单独做 A/B，不要和 seed 改动混在一起；
 - 本发布包默认不启用；
-- 只建议在 DeepSeek Harness 里用；Qoder 的 reasoning 回传问题见 0.4。
+- 只建议在 DeepSeek Harness 里用；Qoder 不在本插件范围内，见 0.4。
 
-### 5.4 工具步 reasoning
+### 5.4 工具步 reasoning：把计划放回最近位置
 
-工具步不注入新 seed，但工具步的 `reasoning_content` 会被下一次请求继承。实际会话里，工具步 reasoning 经常是整段计划，可能比首条 seed 更长。它既可能延续 WeNeed，也可能把 `Let me` 带起来；这是 seed 之后的主要漂移来源。
+工具步不新增消息，也不在 tool result 后插第二个 task seed。它只改最近一条 `assistant(tool_calls)` 的 `reasoning_content`：保留该步原有计划，追加 `TOOL_STEP_ANCHOR` 和完整 seed；`content` 保持 `""`，`tool_calls` / id / arguments / tool result 不变，tool pair 完整。
+
+这样下一次模型生成时，最近的材料不是“工具结果之后的一段空白”，而是它自己的计划 + We Need 锚点；思维链不会在工具边界断掉。实际会话里，工具步 reasoning 可能很长，anchor+seed 是把它拉回当前计划，不是覆盖它。
 
 ### 5.5 压缩
 
-压缩请求本身不注入；压缩后的新 user task 正常注入；压缩后如果仍是 tool step，不重种。
+- 压缩请求（`purpose=compaction`）本身不插 seed；插件在压缩指令后追加 `COMPACTION_REGISTER`，让生成的 checkpoint 使用 `We need / Let's need`，并保留路径、命令、错误串、数字。
+- 压缩后的新 user task 正常在 task 前注入 seed。
+- 压缩后如果没有新 task、但 checkpoint 后有 tool-call assistant，`postCompactionSeed: reasoning` 会把 seed 补到该 assistant 的 reasoning。
+- checkpoint-only 且没有 tool-call assistant 时没有安全落点，不强行插消息（已知 no-op）。
+- 已知边角：连续压缩时，引擎可能把刚生成的 checkpoint 再压一次，出现 `summary is not smaller` 警告；这是 DSH compaction engine 的选择问题，不阻断任务，2026-11-10 已决定暂不修。
 
 ---
 
@@ -371,7 +523,7 @@ systemPrompt.section({
 
 发布包**不注册自己的 provider**，也**不需要按供货商配路由**。
 
-`cordis.patch.yml` 里只有：
+`cordis.patch.yml` 的核心配置：
 
 ```yaml
 intercept: true
@@ -379,6 +531,8 @@ matchName: false
 targetRules:
   - [deepseek, flash]
 ```
+
+完整默认配置（含 `toolStepReasoning` / `postCompactionSeed` / `compactionRegister`）见 §2。
 
 模型选择器不会多出一个“WeNeed 中间商”。插件只做：
 
@@ -407,14 +561,14 @@ if (typeof config.provider === 'string' && config.provider.length > 0) {
 ### npm
 
 ```sh
-dsh plugin --profile desktop add dsh-we-need-plugin@0.7.1
+dsh plugin --profile desktop add dsh-we-need-plugin@2.0.1
 ```
 
 ### tarball
 
 ```sh
 npm pack
-dsh plugin --profile desktop add ./dsh-we-need-plugin-0.7.1.tgz
+dsh plugin --profile desktop add ./dsh-we-need-plugin-2.0.1.tgz
 ```
 
 ### GitHub
@@ -752,15 +906,15 @@ npm pack
 产物：
 
 ```text
-dsh-we-need-plugin-0.7.1.tgz
+dsh-we-need-plugin-2.0.1.tgz
 ```
 
 GitHub Release：
 
 ```sh
-git tag v0.7.1
-git push origin v0.7.1
-gh release create v0.7.1 ./dsh-we-need-plugin-0.7.1.tgz --generate-notes
+git tag v2.0.1
+git push origin v2.0.1
+gh release create v2.0.1 ./dsh-we-need-plugin-2.0.1.tgz --generate-notes
 ```
 
 npm：
@@ -804,7 +958,23 @@ dsh-we-need-plugin/
 - delegated 模式保留原 adapter 的跨模型历史过滤；自定义 adapter 的 `wireMessage()` 没有 same-model 检查，Kimi → DeepSeek 历史会把 Kimi reasoning 也带给 DeepSeek。这是当前已知差异。
 - 默认不需要 provider 配置；任何 provider 都可用。
 - delegated 模式的字段顺序由原 adapter 决定，不保证 DSH 自定义 wire 契约；需要精确字段契约时用 `interceptModels` 自定义路由。
-- 不做 token 计数、不做 drift 重锚、不在工具步追加 seed。
+- 工具步只在已有 `assistant(tool_calls)` 的 `reasoning_content` 追加 anchor+seed，不新增消息；其他 provider/adapter 的工具步形状尚未验证。
+- checkpoint-only 且没有 tool-call assistant 时没有安全落点，不强行插消息（已知 no-op）。
+- 连续压缩时可能出现 `summary is not smaller` 警告；这是 DSH compaction engine 的 checkpoint 再压缩问题，不阻断任务，暂不修。
+- Qoder 不在本插件范围内；它需要单独的代理/镜像路线。
+- 不做 token 计数、不做运行期 drift 统计/自动重锚。
+
+---
+
+## 更新说明
+
+**2.0.1**：稳定的 We Need 思维链，极大提升了 DeepSeek V4.1 Flash 执行计划的连贯性，减少无效思维，显著提升思维质量。适用于标准模式 DeepSeek V4.1 Flash（DSH 插件 2.0.1）。
+
+- 修复 GitHub Issue #1：`openai-responses` wire 的 `thinkingSignature` 不再被覆盖为裸串 `reasoning_content`；保留 provider 原始 reasoning item JSON，旧损坏签名不再触发 `JSON.parse` 报错。
+- 删除 `normalizeRegister` 当前 task assistant 历史改写，只保留自然 seed / tool anchor 引导。
+- tool-call assistant 的 text content 在 adapter 与 delegated 路径发 wire 前清空；保留 reasoning、tool_calls、tool result 和 tool pair。
+- 任务入口改为 deny-list：已知 runtime/skill/time/team/agent/subagent/审批等 context kind 排除；`goal`、`schedule`、`tool-goal` 及未来 task kind 走内容兜底，goal-only 会话也会注入 seed。
+- 页面简介、README 原理和更新说明同步到 2.0.1。
 
 ---
 
