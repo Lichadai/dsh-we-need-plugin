@@ -51,6 +51,7 @@ assert.ok(patch.includes('matchName: false'), 'release should match the upstream
 assert.ok(patch.includes('mirror: false'), 'DSH must not mirror reasoning into content');
 assert.ok(patch.includes('mirrorToolSteps: false'), 'DSH tool-step content must stay empty');
 assert.ok(patch.includes('toolStepAnchor: off'), 'DSH tool-step content must not receive an anchor');
+assert.ok(patch.includes('toolStepReseed: true'), 'release bundle must enable tool-step reseed by default');
 assert.ok(!patch.includes('interceptModels'), 'release should not require provider routes');
 assert.ok(!patch.includes('captureDir'), 'release must not contain captureDir');
 assert.ok(!pkg.files.includes('harness.js'), 'release must not ship harness.js');

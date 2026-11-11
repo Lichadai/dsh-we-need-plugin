@@ -5,7 +5,7 @@
 - 修复工具步「运行工具后重述任务/漂移」根因：seed 是合成消息、DSH 不持久化进历史，旧 `injectSeed` 在工具步剥掉 seed 又不重注入，导致工具步请求丢失紧贴 task 的 WeNeed 锚点。新增 opt-in `toolStepReseed`：工具步分支复用首轮 `contexts→seed→task` 逻辑，把 seed 重新注入紧贴 task（含 isTarget 守卫）。live wire 确证每个工具步 seed 紧贴 task；语态两轮 letMe=0–1（修复前全程漂）。
 - 修复 pi-ai 序列化字段名漂移：上游用 `reasoning`/`reasoning_text` 字段回思考时，pi-ai 原样 replay 成该字段，网关只读 `reasoning_content` → 计划丢失。`replaySignatureFor` 在 openai-completions 分支把三个 plain 别名统一归一成 `reasoning_content`（JSON reasoning-details 签名保留，非 completions 不变），恢复 1.0.9 的归一化行为。
 - 新增 tests/toolstep-reseed.test.mjs（off 默认/on 紧贴/idempotent 不累积/non-target 不注入）与 tests/signature-normalize.test.mjs；全套件绿。
-- 默认契约不变：`toolStepReseed` 默认 false，需配置开启；mirror 默认 false。
+- 发布 bundle 默认开启 `toolStepReseed: true`（cordis.patch.yml），标准安装即获得工具步重注入修复；库级 `injectSeed` 参数仍默认 false（opt-in API 契约不变），mirror 默认 false。
 
 ## 2.1.0
 

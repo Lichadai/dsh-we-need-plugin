@@ -7,6 +7,7 @@
         mirrorToolSteps: false
         toolStepAnchor: off
         toolStepReasoning: anchor-seed
+        toolStepReseed: true
         postCompactionSeed: reasoning
         compactionRegister: we-need
         mirrorScope: task
