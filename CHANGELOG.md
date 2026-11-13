@@ -1,5 +1,34 @@
 # Changelog
 
+## 4.0.0
+
+- 提升 DeepSeek V4.1 Flash 的规划与执行能力：seed 继续使用仿 Kimi K3.1 Pro 的完整决策轨迹（任务复述 → 约束 → 候选 A/B → 风险检查 → 选定 → 祈使收尾）；本版以 live 的 882 字符抽象决策版为准，保留具体候选动作与选择理由，不退回抽象词表。
+- Team 外发提示词重写：不再要求“每句都以情态词开头”，改为 `Need / Should / Could / Can / Must / May` + `We need / We should / We can / Let's` 的语义分工与句式混合；长消息至少两个不同情态开头 + 一个普通句，避免外发消息退化成纯祈使流程。
+- 保留 `send_message` / `spawn_teammate` / `subagent` / `subagent_fork` / `team_task_create` / `team_task_update` / `remote_send_message` 七个覆盖点；只追加 description，不改工具名、参数或结构。
+- 版本升到 4.0.0；README 增加推荐提示词（带高频规划词）和简短事例；package/locale 描述同步为“极大提升 DeepSeek V4.1 Flash 的能力”。
+- 保留 3.3.0 的 seed/compaction/nearest/tool-step 配置；`toolDescriptionSeed` 仍默认 off，D 配置仅作对照。
+
+## 3.3.0
+
+- seed 改为 Kimi K3.1 Pro 决策型 reasoning 的 We 版（931 字符 / 1375 字节，无 `I` 起句）。
+- compaction register 改为 `Need / Should / Can / Could / Must` 起句，并要求 checkpoint 含“上一步实际执行”的同句式摘要。
+- Team 外发提示改为 need-first，明确“发给 teammate 的每条消息就是给对方的 prompt”，覆盖 7 个外发工具。
+- `nearestGuidance`、`toolStepAnchor`、`toolDescriptionSeed`、`taskPolicy` 同步改为 need-first。
+- 默认最终配置：完整 seed bundle + `nearestGuidance: both` + `teamRegisterHint: true` + `toolDescriptionSeed: off`；D 保留为实验对照。
+
+## 3.2.0
+
+- 实验版（A/B/C 对比，默认配置 = 3.0 行为）。新增底座开关 + 输出侧引导杠杆，全部按稳定字段名定位、追加/填充式、升版不坏：
+  - `seedInjection`（默认 true）：是否注入 seed assistant 消息。
+  - `reorderContexts`（默认 true）：是否把 task 之后的 context 移到 task 前（orderContextsBeforeTask + contexts→seed→task）。
+  - `sanitizeProgram`（默认 true）：是否清洗 system/工具描述。
+  - `nearestGuidance`（默认 off；content/reasoning/both）：在最近一条 assistant(tool_calls) 的 content（仅空时填、不覆盖模型自身正文）与/或 reasoning_content 末尾填入干净集体引导 NEAREST_GUIDANCE（继续导向、let/need 为主、自然分布）。幂等、replayState 对齐、不新增消息、不拆 tool pair。
+  - `teamRegisterHint`（默认 false）：给 send_message / spawn_teammate / subagent / subagent_fork 的 description 末尾追加软性 register 指令——直接让外发消息/任务用集体语态写（非 seed hint）。只追加、不改名/参数/结构。
+- A/B/C（运行配置见 `experiments/cordis.{A,B,C}.yml` + `experiments/EXPERIMENT.md`）：共同杠杆 `nearestGuidance:both`+`teamRegisterHint:true` 三组都开。3.0 的 seed 是一个 bundle（injectSeed + toolStepReseed + toolStepReasoning 的 seed 部分 + postCompactionSeed），故 B↔C 把整个 bundle 作为单一变量：A/B seed-free（`seedInjection:false`、`toolStepReasoning:anchor` 只留短锚不含 seed、`postCompactionSeed:off`），C 完整 3.0（`anchor-seed`+`reasoning`）。A↔B 仅 `reorderContexts` false→true。`sanitizeProgram`（3.0 标准清洗，非 you→we 改写）及其余非 seed 杠杆三组恒定。C=完整 3.0+引导；A=无 seed/无移动+引导；B=3.0 去 seed 留移动+引导。
+- 离线实证：6 套件绿（含新 nearest-output-ab.test）；tmp/verify-abc-configs.mjs 23 项全过——A/B 用户轮与工具步 wire 均无 seed、C seed 紧贴 task 且工具步 reasoning 含 seed；三组最近 reasoning 均有引导、Team 描述均有 hint；88 工具数量/名称/参数骨架逐字节不变；A↔B 仅 reorder 异、B↔C 仅 seed bundle 异。
+- 依据 2026-11-11 更正：content 可非空、网关接受，填干净引导是已验证杠杆（letMe=0）；mirror 模型自身漂移 reasoning 才放大漂移；绝不写 role:tool content。
+- 实验版：真实采纳 A/B 待跑（dsh-live-session-debug）；live 安装/发布待确认。
+
 ## 3.0.0
 
 - 升版 3.0.0：2.2 的工具步重注入 + 签名归一相对 2.1 是行为级变化，按主版本发布。bundle 默认 `toolStepReseed: true`，标准安装即生效。

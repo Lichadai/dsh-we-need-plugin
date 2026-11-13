@@ -1,10 +1,28 @@
 # DSH We Need Plugin
 
-> **适用于 DeepSeek V4.1 Flash（DSH 插件 3.0.0）。**
+> **4.0.0（Kimi 决策型 seed / Team 语态优化）**：seed 使用仿 Kimi K3.1 Pro 的完整决策轨迹（任务复述 → 约束 → 候选 A/B → 风险检查 → 选定 → 收尾）；compaction 与 Team 外发改为 `Need / Should / Could / Can / Must / Let's` 的语义分工与句式混合。最终配置 = 完整 seed bundle + `nearestGuidance: both` + `teamRegisterHint: true` + `toolDescriptionSeed: off`。A/B/C/D 实验配置保留在 `experiments/`，D 仅作对照。
 >
-> 稳定的 We Need 思维链，极大提升了 DeepSeek V4.1 Flash 执行计划的连贯性，减少无效思维，显著提升思维质量。
+> 当前 seed（882 字符 / 883 字节，SHA `901a2ed2…`；文件 SHA `94499d6f…`）：
+>
+> ```text
+> We need respond to the current request; the request asks for concrete work. Should follow the request's language, role, and constraints, but no extra identity perhaps. Should consider evidence and honesty: should not claim unobserved facts; can respond naturally "Need inspect the actual inputs first." We should embody a concise, direct plan, no filler. User asks for work, respond perhaps "Need read the actual inputs first." Should avoid overdo "Need proceed" per context? The request says skip filler; but concrete action is appropriate. Could say "Need inspect the actual inputs first." This is enough. Should have no invented tools, no guessed memory. Must perhaps not describe "Need inspect" as done? It is okay as a plan. Desired response straightforward. Perhaps "Need inspect the actual inputs first." Good. No need repeat the task unless asked. Respond by doing the work.
+> ```
 
-> **3.0.0**：当前发布版。已核实支持：**标准模式**、**goal 模式**（goal-only 会话也注入 seed）、**Team Agent 会话**（team/agent/subagent 消息按上下文处理，seed 仍注入真实任务）、**Response API**（openai-responses 签名保留，完整 live 验证待补）；其他模式未验证。模型匹配默认要求 `DeepSeek` 与 `Flash` 两个词（大小写不敏感）；seed 按 `seed.txt` 实际内容注入。下文旧版 `728/728`、`taskPolicy`、`registerGate`、`mirrorToolSteps` 等只作历史说明，不再代表 3.0.0 默认行为。
+> **推荐提示词（带高频规划词）**：写任务时可直接用 `Need / Should / Could / Must / Let's` 承担不同动作。简短事例：
+>
+> ```text
+> Need 读取当前项目要求和验收项。Should 先写计划并列出证据。Could 先做一个最小样件验证关键结构。Must 保留用户原话、路径和数值不变。Let's 用真实渲染图复核后再扩展。
+> ```
+>
+> 这不是要求每句都套同一个词；`Need` 用于必需动作，`Should` 用于质量/约束，`Could` / `Can` 用于选项/能力，`Must` 用于硬限制，`Let's` 用于共同下一步。
+
+> 下文 3.0.0 说明仍适用于 seed 注入底座；3.2.0 实验配置与 A/B/C/D 说明保留作历史对照。
+
+> **适用于 DeepSeek V4.1 Flash（DSH 插件 4.0.0）。**
+>
+> 稳定的 We Need 思维链，极大提升 DeepSeek V4.1 Flash 的能力；仿 Kimi K3.1 Pro 的决策型 seed 把任务复述、约束、候选 A/B、风险检查、选定与收尾带到当前 task 紧前，减少无效思维，提升计划与执行质量。
+
+> **4.0.0**：当前发布版。已核实支持：**标准模式**、**goal 模式**（goal-only 会话也注入 seed）、**Team Agent 会话**（team/agent/subagent 消息按上下文处理，seed 仍注入真实任务）、**Response API**（openai-responses 签名保留，完整 live 验证待补）；其他模式未验证。4.0.0 新增 Team 外发语态规则：`Need / Should / Could / Can / Must / May` + `We need / We should / We can / Let's` 自然分布，允许普通陈述句与直接祈使句，长消息至少两个不同情态开头。模型匹配默认要求 `DeepSeek` 与 `Flash` 两个词（大小写不敏感）；seed 按 `seed.txt` 实际内容注入。下文旧版 `728/728`、`taskPolicy`、`registerGate`、`mirrorToolSteps` 等只作历史说明，不再代表 4.0.0 默认行为。
 
 DeepSeek Harness（DSH）Host 插件：不改 tools、不改采样参数，只在每次模型生成前，把 **计划与上一轮思考结果** 放到离模型最近的位置；让 DeepSeek V4.1 Flash 的思维链一路顺承，稳定保持 `We need / Let's / We / Should`。
 

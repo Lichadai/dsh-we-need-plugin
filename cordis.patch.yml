@@ -11,6 +11,14 @@
         postCompactionSeed: reasoning
         compactionRegister: we-need
         mirrorScope: task
+        seedInjection: true
+        reorderContexts: true
+        sanitizeProgram: true
+        nearestGuidance: both
+        teamRegisterHint: true
+        toolResultSeed: off
+        toolDescriptionSeed: off
         matchName: false
         targetRules:
           - [deepseek, flash]
+          - [weneed, ds41]

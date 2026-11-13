@@ -231,7 +231,7 @@ const delegatedCtx = {
         stream: async function* (options) {
           lastDelegatedMessages = options.messages;
           const seeded = options.messages.some((message) => message.role === 'assistant'
-            && message.content?.some((block) => block.type === 'reasoning' && block.text?.startsWith('We need understand')));
+            && message.content?.some((block) => block.type === 'reasoning' && block.text?.startsWith(SEED.slice(0, 24))));
           yield { type: 'text-delta', text: `delegated:${options.provider}/${options.model}:${options.__weneedBypass}:${seeded}` };
         },
       };

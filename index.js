@@ -9,6 +9,7 @@ import { readFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { randomUUID, createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { install as installDebugTap } from './debug-tap.mjs';
 
 const SEED_URL = new URL('./seed.txt', import.meta.url);
 let seedText;
@@ -24,11 +25,30 @@ if (SEED.length === 0) {
 
 const DEFAULT_TARGET_RULES = [['deepseek', 'flash']];
 
-const TOOL_STEP_ANCHOR = "We need continue from the tool result. We need keep the plan concrete. Need state the next action. Let's do it now.\n\nWe need act now.";
-const TASK_POLICY = 'Reasoning register for this task: start the plan with We need or Need; use Let\'s for the next action; keep the planning collective, concrete, and evidence-first.';
+const TOOL_STEP_ANCHOR = "Need continue from the tool result. Should keep the plan concrete. Must state the next action. Need act now.";
+// Nearest-output guidance (config.nearestGuidance). Clean, soft collective
+// planning nudge filled into the latest assistant(tool_calls) content and/or
+// appended to its reasoning_content. Continue-oriented (not the opening seed),
+// let/need dominant with normal sentences. Field-keyed, append/fill-only.
+const NEAREST_GUIDANCE = "Need continue from the latest result and keep the whole picture in view. Should choose the next concrete action. Need proceed.";
+// Team outgoing register instruction (config.teamRegisterHint). Appended to the
+// description of tools whose payload is direct speech/task sent to another agent
+// (send_message / spawn_teammate / subagent / team_task_* / remote_send_message).
+// Soft distribution, not a rigid rule. English is explicit: the outgoing register
+// must be English collective voice even when the surrounding task is Chinese;
+// quoted user task text stays verbatim.
+const TEAM_REGISTER_HINT = "Write in English in the planning register. Use Need / Should / Could / Can / Must / May as natural modal openers, and use We need / We should / We can / Let's for collective moves. Vary the sentence shape: mix modal-first sentences with ordinary declaratives and direct imperatives; do not repeat one opener in every sentence. In a longer message, use at least two different modal openers and at least one ordinary sentence. Map the word to the job: Need = required next action; Should = quality or constraint; Could / Can = option or capability; Must = hard limit; Let's = shared next move. Every message or task sent to a teammate is a prompt to that model; make the target, next action, constraints, and expected evidence explicit. Keep any quoted user task verbatim. Keep it natural and concrete.";
+const TEAM_HINT_TOOLS = new Set(['send_message', 'spawn_teammate', 'subagent', 'subagent_fork', 'team_task_create', 'team_task_update', 'remote_send_message']);
+// Persistent program-text guidance (config.toolDescriptionSeed). Appended to tool
+// descriptions so the collective register is present in the program text the model
+// reads on EVERY tool step — cumulative corrective force, unlike the ephemeral
+// latest-turn append. Field-keyed (description), append-only, idempotent; never
+// changes tool name/params. Does not touch the model's own reasoning.
+const TOOL_DESC_GUIDANCE = "Plan in the need-first register: Need / Should / Can / Could / Must, with ordinary sentences mixed in. Keep the whole picture in view; act on evidence and verify.";
+const TASK_POLICY = 'Reasoning register for this task: start with Need or Should; use Can / Could for options; use Must for constraints; keep the plan concrete and evidence-first.';
 const TASK_POLICY_HEAD = TASK_POLICY.slice(0, 40);
 const SEED_HEAD = SEED.slice(0, 48);
-const PLUGIN_VERSION = '3.0.0';
+const PLUGIN_VERSION = '4.0.0';
 const SEED_HASH = createHash('sha256').update(SEED).digest('hex').slice(0, 16);
 // External injection audit (方案 A): third-party plugins cannot write in-log
 // plugin records (appendPluginRecord is first-party-only, session README:72)
@@ -43,6 +63,15 @@ function auditRecord(entry) {
     appendFileSync(AUDIT_PATH, JSON.stringify({ at: new Date().toISOString(), v: PLUGIN_VERSION, ...entry }) + '\n');
   } catch { /* audit is best-effort; never break injection */ }
 }
+// Temporary forensic dump (config.wireDump, default off): writes the final
+// request messages so failed vs successful runs can be compared byte-for-byte.
+const WIRE_DUMP_PATH = join(homedir(), '.dsh', 'weneed-wire.jsonl');
+function wireDump(entry) {
+  try {
+    if (!auditDirReady) { mkdirSync(join(homedir(), '.dsh'), { recursive: true }); auditDirReady = true; }
+    appendFileSync(WIRE_DUMP_PATH, JSON.stringify({ at: new Date().toISOString(), v: PLUGIN_VERSION, ...entry }) + '\n');
+  } catch { /* best-effort */ }
+}
 function taskHashOf(messages) {
   try {
     const i = lastRealUserIndex(messages);
@@ -54,8 +83,8 @@ function taskHashOf(messages) {
 // its summary in the same collective register so the nearest text to the next
 // task already carries the We need voice. Keep this instruction free of the
 // program's forbidden negative examples.
-const COMPACTION_REGISTER_HEAD = 'Style requirement: write the checkpoint in the same collective planning register';
-const COMPACTION_REGISTER = `${COMPACTION_REGISTER_HEAD} as the work. For goals and next actions, start with "We need" or "Let's need"; for current state and evidence, use "We" and "Need". Keep every section, path, command, error string, identifier, and numeric value unchanged. Keep the bullets terse.`;
+const COMPACTION_REGISTER_HEAD = 'Style requirement: write the checkpoint in the same planning register';
+const COMPACTION_REGISTER = `${COMPACTION_REGISTER_HEAD} as the work. Start goal, next-action, and state sentences with Need, Should, Can, Could, or Must. Use We only when collective ownership is accurate. Include one short line summarizing what the immediately preceding step actually did, in the same sentence pattern. Keep every section, path, command, error string, identifier, and numeric value unchanged. Keep the bullets terse.`;
 // Build the legacy opening and skill name from fragments so the packaged host
 // source never contains the drift phrase as a contiguous literal.
 const LEGACY_OPENING = ['L', 'e', 't', ' ', 'm', 'e'].join('');
@@ -531,6 +560,110 @@ function appendToolStepReasoning(messages, mode = 'off', anchor = TOOL_STEP_ANCH
   return out;
 }
 
+// Nearest-output guidance lever (config.nearestGuidance). Fills clean guidance
+// into the latest assistant(tool_calls) content (only when empty, never over the
+// model's own visible speech) and/or appends it to that turn's reasoning_content.
+// Field-keyed, idempotent, replayState-aligned; no new message, no tool-pair change.
+function applyNearestGuidance(messages, mode = 'off', guidance = NEAREST_GUIDANCE, scopeStart = 0) {
+  const normalized = String(mode ?? 'off').toLowerCase();
+  if (!['content', 'reasoning', 'both'].includes(normalized)) return messages;
+  let index = -1;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]?.role === 'assistant' && hasToolCalls(messages[i])) { index = i; break; }
+  }
+  if (index < 0 || index < scopeStart) return messages;
+  const head = guidance.slice(0, 48);
+  let message = messages[index];
+  const wantContent = normalized === 'content' || normalized === 'both';
+  const wantReasoning = normalized === 'reasoning' || normalized === 'both';
+  if (wantContent && textOf(message).trim().length === 0 && !textOf(message).includes(head)) {
+    message = insertAssistantBlocks(message, ['text'], guidance);
+  }
+  if (wantReasoning) {
+    const reasoning = reasoningTextOf(message).trim();
+    if (!reasoning.includes(head)) {
+      message = withSingleReasoningBlock(message, reasoning ? `${reasoning}\n\n${guidance}` : guidance);
+    }
+  }
+  if (message === messages[index]) return messages;
+  const out = [...messages];
+  out[index] = message;
+  return out;
+}
+
+// Team outgoing register lever (config.teamRegisterHint). Appends a soft register
+// instruction to the description of tools whose payload is direct speech/task sent
+// to another agent. Field-keyed (description), append-only, idempotent; never
+// changes tool name/params/structure.
+function appendTeamRegisterHint(tools, enabled = false) {
+  if (!enabled || !Array.isArray(tools)) return tools;
+  const head = TEAM_REGISTER_HINT.slice(0, 48);
+  let changed = false;
+  const next = tools.map((tool) => {
+    const fn = tool?.function || tool;
+    const name = fn?.name ?? tool?.name;
+    if (!TEAM_HINT_TOOLS.has(name)) return tool;
+    const description = typeof fn?.description === 'string' ? fn.description : '';
+    if (description.includes(head)) return tool;
+    const newDescription = description ? `${description}\n\n${TEAM_REGISTER_HINT}` : TEAM_REGISTER_HINT;
+    changed = true;
+    if (tool.function) return { ...tool, function: { ...fn, description: newDescription } };
+    return { ...tool, description: newDescription };
+  });
+  return changed ? next : tools;
+}
+
+// Persistent tool-description guidance lever (config.toolDescriptionSeed).
+// mode all = append guidance to every tool description; off = no-op. Field-keyed
+// (description), append-only, idempotent; never changes name/params/structure.
+function appendToolDescriptionSeed(tools, mode = 'off', text = TOOL_DESC_GUIDANCE) {
+  if (String(mode ?? 'off').toLowerCase() !== 'all' || !Array.isArray(tools)) return tools;
+  const head = text.slice(0, 48);
+  let changed = false;
+  const next = tools.map((tool) => {
+    const fn = tool?.function || tool;
+    const description = typeof fn?.description === 'string' ? fn.description : '';
+    if (description.includes(head)) return tool;
+    const newDescription = description ? `${description}\n\n${text}` : text;
+    changed = true;
+    if (tool.function) return { ...tool, function: { ...fn, description: newDescription } };
+    return { ...tool, description: newDescription };
+  });
+  return changed ? next : tools;
+}
+
+// Tool-result seed lever (config.toolResultSeed). Appends clean seed text to the
+// content of role:tool results — the material nearest to the model's next
+// reasoning. mode latest = only the last tool result; all = every tool result.
+// Append-only, idempotent; never touches toolCallId or assistant tool-call turns.
+// KNOWN RISK: writing role:tool content broke WeNeed when raw hints were used;
+// clean seed is an opt-in experiment, default off.
+function appendToolResultSeed(messages, mode = 'off', text = SEED, scopeStart = 0) {
+  const normalized = String(mode ?? 'off').toLowerCase();
+  if (!['latest', 'all'].includes(normalized)) return messages;
+  const toolIndices = [];
+  for (let i = 0; i < messages.length; i += 1) {
+    if (messages[i]?.role === 'tool') toolIndices.push(i);
+  }
+  if (toolIndices.length === 0) return messages;
+  const targets = normalized === 'latest' ? [toolIndices[toolIndices.length - 1]] : toolIndices;
+  const head = text.slice(0, 48);
+  let changed = false;
+  const out = [...messages];
+  for (const index of targets) {
+    if (index < scopeStart) continue;
+    const message = out[index];
+    if (textOf(message).includes(head)) continue;
+    const addition = `\n\n${text}`;
+    const content = Array.isArray(message.content)
+      ? [...message.content, { type: 'text', text: addition }]
+      : `${textOf(message)}${addition}`;
+    out[index] = { ...message, content };
+    changed = true;
+  }
+  return changed ? out : messages;
+}
+
 function hasSeedAfter(messages, startIndex) {
   for (let i = startIndex; i < messages.length; i += 1) {
     const message = messages[i];
@@ -893,7 +1026,9 @@ function seedMessage(provider, model) {
   };
 }
 
-function injectSeed(messages, options, modelConfig, targetRules = DEFAULT_TARGET_RULES, matchName = false, compactionRegister = 'we-need', toolStepReseed = false) {
+function injectSeed(messages, options, modelConfig, targetRules = DEFAULT_TARGET_RULES, matchName = false, compactionRegister = 'we-need', toolStepReseed = false, flags = {}) {
+  const seedEnabled = flags.seedEnabled !== false;
+  const reorderEnabled = flags.reorderEnabled !== false;
   const cleaned = messages.filter((message) => !isSeed(message));
   // purpose:'compaction' is the authoritative host signal; text sniff is fallback.
   if (options.purpose === 'compaction' || isCompactionRequest(cleaned)) {
@@ -904,12 +1039,12 @@ function injectSeed(messages, options, modelConfig, targetRules = DEFAULT_TARGET
     };
   }
   if (isToolStep(cleaned[cleaned.length - 1]) || isToolStepAfterContexts(cleaned)) {
-    const ordered = orderContextsBeforeTask(cleaned);
+    const ordered = reorderEnabled ? orderContextsBeforeTask(cleaned) : cleaned;
     // The seed is synthetic and DSH does not persist it in history; stripping it
     // above leaves tool steps with no WeNeed anchor, so the model loses the
     // thread and re-states the task. Reseed keeps the anchor adjacent to the
     // task on every tool step, matching the first-turn injection.
-    if (toolStepReseed) {
+    if (toolStepReseed && seedEnabled) {
       const toolTaskIndex = lastRealUserIndex(ordered);
       if (toolTaskIndex >= 0 && isTarget(options.model, modelConfig?.name, modelConfig?.target, targetRules, matchName)) {
         const task = ordered[toolTaskIndex];
@@ -945,17 +1080,18 @@ function injectSeed(messages, options, modelConfig, targetRules = DEFAULT_TARGET
   }
   const task = cleaned[taskIndex];
   const after = cleaned.slice(taskIndex + 1);
-  const contexts = after.filter(isContextUser);
-  const rest = after.filter((message) => !isContextUser(message));
+  const contexts = reorderEnabled ? after.filter(isContextUser) : [];
+  const rest = reorderEnabled ? after.filter((message) => !isContextUser(message)) : after;
+  const seedBlocks = seedEnabled ? [seedMessage(options.provider, options.model)] : [];
   return {
     messages: [
       ...cleaned.slice(0, taskIndex),
       ...contexts,
-      seedMessage(options.provider, options.model),
+      ...seedBlocks,
       task,
       ...rest,
     ],
-    injected: true,
+    injected: seedEnabled,
     reason: 'user-task',
     taskIndex,
   };
@@ -1102,7 +1238,7 @@ class WeNeedNativeAdapter {
   async *stream(options) {
     const modelConfig = this.configFor(options.provider, options.model) ?? {};
     const filtered = filterSkillCatalog(options.messages ?? []);
-    const { messages, reason } = injectSeed(filtered, options, modelConfig, this.config.targetRules, this.config.matchName === true, this.config.compactionRegister, this.config.toolStepReseed === true);
+    const { messages, reason } = injectSeed(filtered, options, modelConfig, this.config.targetRules, this.config.matchName === true, this.config.compactionRegister, this.config.toolStepReseed === true, { seedEnabled: this.config.seedInjection !== false, reorderEnabled: this.config.reorderContexts !== false });
     const policyEligible = reason === 'user-task'
       || (reason === 'tool-step'
         && lastCompactionIndex(messages) < lastRealUserIndex(messages));
@@ -1132,11 +1268,16 @@ class WeNeedNativeAdapter {
       || ['content', 'both'].includes(String(this.config.toolStepAnchor ?? 'off').toLowerCase())
       || ['content', 'both'].includes(String(this.config.postCompactionSeed ?? 'off').toLowerCase());
     const contentSafe = allowToolStepContent ? anchored : stripToolCallAssistantContent(anchored);
-    const sanitizedMessages = sanitizeProgramMessages(contentSafe);
-    const wire = sanitizedMessages
+    const sanitizeEnabled = this.config.sanitizeProgram !== false;
+    const sanitizedMessages = sanitizeEnabled ? sanitizeProgramMessages(contentSafe) : contentSafe;
+    const guidedMessages = applyNearestGuidance(sanitizedMessages, this.config.nearestGuidance, NEAREST_GUIDANCE, scopeStart);
+    const seededToolMessages = appendToolResultSeed(guidedMessages, this.config.toolResultSeed, SEED, scopeStart);
+    const wire = seededToolMessages
       .map((message) => wireMessage(message, mirror, mirrorToolSteps))
       .filter(Boolean);
-    const tools = sanitizeToolDefinitions(Array.isArray(options.tools) ? options.tools : []);
+    const baseTools = Array.isArray(options.tools) ? options.tools : [];
+    const sanitizedTools = sanitizeEnabled ? sanitizeToolDefinitions(baseTools) : baseTools;
+    const tools = appendToolDescriptionSeed(appendTeamRegisterHint(sanitizedTools, this.config.teamRegisterHint === true), this.config.toolDescriptionSeed, this.config.toolDescriptionSeedText || TOOL_DESC_GUIDANCE);
     const body = {
       model: options.model,
       messages: wire,
@@ -1294,9 +1435,10 @@ class WeNeedNativeAdapter {
 
 export const name = 'dsh-we-need-plugin';
 export const inject = ['llm'];
-export { injectSeed, isCompactionRequest, isTarget, DEFAULT_TARGET_RULES, WeNeedNativeAdapter, mirrorMessages, mirrorAssistantMessage, wireMessage, stripToolCallAssistantContent, anchorEmptyToolPlan, anchorAfterCompaction, shouldAnchorAfterCompaction, hasSeedAfter, reasoningTextOf, normalizeReasoningChannelMessages, appendToolStepReasoning, appendTaskPolicy, orderContextsBeforeTask, sanitizeProgramText, sanitizeProgramMessages, sanitizeToolDefinition, sanitizeToolDefinitions, TASK_POLICY, TOOL_STEP_ANCHOR, taskScopeStart, lastCompactionIndex };
+export { injectSeed, isCompactionRequest, isTarget, DEFAULT_TARGET_RULES, WeNeedNativeAdapter, mirrorMessages, mirrorAssistantMessage, wireMessage, stripToolCallAssistantContent, anchorEmptyToolPlan, anchorAfterCompaction, shouldAnchorAfterCompaction, hasSeedAfter, reasoningTextOf, normalizeReasoningChannelMessages, appendToolStepReasoning, appendTaskPolicy, orderContextsBeforeTask, sanitizeProgramText, sanitizeProgramMessages, sanitizeToolDefinition, sanitizeToolDefinitions, TASK_POLICY, TOOL_STEP_ANCHOR, taskScopeStart, lastCompactionIndex, applyNearestGuidance, appendTeamRegisterHint, appendToolResultSeed, appendToolDescriptionSeed, NEAREST_GUIDANCE, TEAM_REGISTER_HINT, TOOL_DESC_GUIDANCE };
 
 export function apply(ctx, config = {}) {
+  if (config.debugTap === true) { try { installDebugTap(); } catch {} }
   const adapter = new WeNeedNativeAdapter(config, {
     resolveKey: async (ref) => {
       try {
@@ -1338,7 +1480,7 @@ export function apply(ctx, config = {}) {
       }
       const filtered = filterSkillCatalog(options.messages ?? []);
       const filterChanged = filtered !== (options.messages ?? []);
-      const injected = injectSeed(filtered, options, {}, config.targetRules, config.matchName === true, config.compactionRegister, config.toolStepReseed === true);
+      const injected = injectSeed(filtered, options, {}, config.targetRules, config.matchName === true, config.compactionRegister, config.toolStepReseed === true, { seedEnabled: config.seedInjection !== false, reorderEnabled: config.reorderContexts !== false });
       auditRecord({
         provider: options.provider, model: options.model, purpose: options.purpose,
         reason: injected.reason, injected: injected.injected === true,
@@ -1408,9 +1550,16 @@ export function apply(ctx, config = {}) {
       const contentSafeMessages = allowToolStepContent
         ? anchoredMessages
         : stripToolCallAssistantContent(anchoredMessages);
-      const sanitizedMessages = sanitizeProgramMessages(contentSafeMessages);
-      const sanitizedTools = sanitizeToolDefinitions(options.tools);
-      const programChanged = sanitizedMessages !== anchoredMessages || sanitizedTools !== options.tools;
+      const sanitizeEnabled = config.sanitizeProgram !== false;
+      const sanitizedMessages = sanitizeEnabled ? sanitizeProgramMessages(contentSafeMessages) : contentSafeMessages;
+      const sanitizedTools = sanitizeEnabled ? sanitizeToolDefinitions(options.tools) : options.tools;
+      const guidedMessages = applyNearestGuidance(sanitizedMessages, config.nearestGuidance, NEAREST_GUIDANCE, scopeStart);
+      const seededToolMessages = appendToolResultSeed(guidedMessages, config.toolResultSeed, SEED, scopeStart);
+      const hintedTools = appendToolDescriptionSeed(appendTeamRegisterHint(sanitizedTools, config.teamRegisterHint === true), config.toolDescriptionSeed, config.toolDescriptionSeedText || TOOL_DESC_GUIDANCE);
+      const guidanceChanged = guidedMessages !== sanitizedMessages;
+      const toolResultChanged = seededToolMessages !== guidedMessages;
+      const hintChanged = hintedTools !== sanitizedTools;
+      const programChanged = sanitizedMessages !== anchoredMessages || sanitizedTools !== options.tools || guidanceChanged || toolResultChanged || hintChanged;
       if (injected.reason === 'compaction-request'
         || injected.reason === 'title-or-suggestion'
         || typeof ctx.llm?.prepareCall !== 'function') {
@@ -1436,11 +1585,20 @@ export function apply(ctx, config = {}) {
         yield* next();
         return;
       }
+      if (config.wireDump === true) {
+        const hintHead = TEAM_REGISTER_HINT.slice(0, 40);
+        const descHead = (config.toolDescriptionSeedText || TOOL_DESC_GUIDANCE).slice(0, 40);
+        const toolsSummary = (Array.isArray(hintedTools) ? hintedTools : []).map((t) => {
+          const fn = t?.function || t; const d = typeof fn?.description === 'string' ? fn.description : '';
+          return { name: fn?.name ?? t?.name, hint: d.includes(hintHead), descSeed: d.includes(descHead), len: d.length };
+        });
+        wireDump({ reason: injected.reason, taskIndex: injected.taskIndex ?? null, messageCount: seededToolMessages.length, messages: seededToolMessages, tools: toolsSummary });
+      }
       yield* prepared.stream({
         ...options,
         ...prepared.config,
-        messages: sanitizedMessages,
-        ...(sanitizedTools === options.tools ? {} : { tools: sanitizedTools }),
+        messages: seededToolMessages,
+        ...(hintedTools === options.tools ? {} : { tools: hintedTools }),
         __weneedBypass: true,
       });
     }, { global: true });

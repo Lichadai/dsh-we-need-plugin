@@ -1,8 +1,8 @@
 {
   "name": "dsh-we-need-plugin",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "type": "module",
-  "description": "稳定的 We Need 思维链，极大提升 DeepSeek V4.1 Flash 执行计划的连贯性，减少无效思维，显著提升思维质量；支持标准模式 / goal 模式 / Team Agent 会话 / Response API（openai-responses），其他模式未验证。DSH 插件 3.0.0。",
+  "description": "稳定的 We Need 思维链，极大提升 DeepSeek V4.1 Flash 的能力。seed 仿 Kimi K3.1 Pro 的完整决策型 reasoning，包含任务复述、约束、候选 A/B、风险检查、选定与收尾；need-first 引导压缩与 Team 外发，外发消息混合 Need / Should / Could / Can / Must / Let's 句式。支持标准模式 / goal 模式 / Team Agent 会话。DSH 插件 4.0.0。",
   "license": "MIT",
   "author": "DSH We Need Plugin contributors",
   "repository": {
@@ -34,6 +34,7 @@
   },
   "files": [
     "index.js",
+    "debug-tap.mjs",
     "seed.txt",
     "cordis.patch.yml",
     "locale/*.json",
