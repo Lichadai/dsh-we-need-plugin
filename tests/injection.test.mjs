@@ -18,6 +18,7 @@ import {
   TASK_POLICY,
   TOOL_STEP_ANCHOR,
   taskScopeStart,
+  stripToolCallAssistantContent,
 } from '../index.js';
 
 const MODEL = { name: 'DeepSeek-V4.1-Flash' };
@@ -314,6 +315,30 @@ const oldDelegatedAfter = lastDelegatedMessages.find((message) => message.conten
 assert.ok(oldDelegatedAfter);
 assert.equal(oldDelegatedAfter.content.some((block) => block.type === 'text' && block.text === 'OLDER TASK PLAN'), false);
 
+const visibleDelegatedTool = {
+  role: 'assistant',
+  content: [
+    { type: 'text', text: 'VISIBLE TOOL PLAN' },
+    { type: 'reasoning', text: 'R2' },
+    { type: 'tool-call', id: 'visible', name: 'read', arguments: '{}' },
+  ],
+};
+await runDelegated({
+  provider: 'any-provider',
+  model: 'deepseek-v4-flash',
+  messages: [
+    system('system prompt'),
+    user('old task'),
+    visibleDelegatedTool,
+    { role: 'tool', content: text('result'), toolCallId: 'visible' },
+    user('new task'),
+  ],
+});
+const visibleDelegatedAfter = lastDelegatedMessages.find((message) => message.content
+  ?.some((block) => block.type === 'tool-call' && block.id === 'visible'));
+assert.ok(visibleDelegatedAfter);
+assert.equal(visibleDelegatedAfter.content.some((block) => block.type === 'text' && block.text === 'VISIBLE TOOL PLAN'), true);
+
 const scopeHandlers = [];
 let scopeCalls = 0;
 let scopeMessages;
@@ -498,13 +523,13 @@ assert.deepEqual(anchoredContent.content.map((block) => block.type), ['text', 'r
 const anchoredContentWire = wireMessage(anchoredContent, true, true);
 assert.equal(anchoredContentWire.content, TOOL_STEP_ANCHOR);
 assert.equal(anchoredContentWire.reasoning_content, '');
-assert.equal(wireMessage(anchoredContent, true, false).content, '');
+assert.equal(wireMessage(anchoredContent, true, false).content, TOOL_STEP_ANCHOR);
 const anchoredBoth = anchorEmptyToolPlan(anchorStep, 'both')[2];
 assert.deepEqual(anchoredBoth.content.map((block) => block.type), ['text', 'reasoning', 'reasoning', 'tool-call']);
 const anchoredBothWire = wireMessage(anchoredBoth, true, true);
 assert.equal(anchoredBothWire.content, TOOL_STEP_ANCHOR);
 assert.equal(anchoredBothWire.reasoning_content, TOOL_STEP_ANCHOR);
-assert.equal(wireMessage(anchoredBoth, true, false).content, '');
+assert.equal(wireMessage(anchoredBoth, true, false).content, TOOL_STEP_ANCHOR);
 assert.equal(anchorEmptyToolPlan([system('s'), user('task'), toolTurn, anchorResult], 'both')[2], toolTurn);
 assert.equal(anchorEmptyToolPlan(anchorStep, 'unknown'), anchorStep);
 
@@ -710,15 +735,18 @@ const toolTurnWithText = {
   ],
 };
 const wireToolText = wireMessage(toolTurnWithText, false, false);
-assert.equal(wireToolText.content, '');
+assert.equal(wireToolText.content, 'visible plan');
 assert.equal(wireToolText.reasoning_content, 'R2');
 assert.deepEqual(wireToolText.tool_calls, [{
   id: 'call-2',
   type: 'function',
   function: { name: 'read', arguments: '{"path":"a"}' },
 }]);
-assert.equal(wireMessage(toolTurnWithText, true, false).content, '');
+assert.equal(wireMessage(toolTurnWithText, true, false).content, 'visible plan');
 assert.equal(wireMessage(toolTurnWithText, true, true).content, 'visible plan');
+const strippedTool = stripToolCallAssistantContent([toolTurnWithText])[0];
+assert.equal(strippedTool.content.some((block) => block.type === 'text'), false);
+assert.equal(strippedTool.content.some((block) => block.type === 'tool-call'), true);
 const wireNoMirror = wireMessage(assistantTrace('R1'), false);
 assert.equal(wireNoMirror.content, '');
 
@@ -726,4 +754,4 @@ console.log('PASS release injection, compaction, tool-step, old-seed strip, non-
 console.log('PASS release target rules and optional provider-scoped intercept routes');
 console.log('PASS provider-agnostic delegated mode: any provider, model-id match, bypass guard');
 console.log('PASS mirror: every target request, normal assistant, opt-in tool-step mirror, anchor modes');
-console.log('PASS tool-step: empty DSH content, contexts before task, idempotent policy, compaction guard');
+console.log('PASS tool-step: content preserved unless strip opt-in, contexts before task, idempotent policy, compaction guard');

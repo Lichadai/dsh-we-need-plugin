@@ -1,5 +1,20 @@
 # Changelog
 
+## 4.1.0
+
+- TeamAgent 外发升级：`TEAM_REGISTER_HINT` 明确覆盖 teammate、sub-agent 与 workflow agent(prompt)，不再只写 “Every message or task sent to a teammate”。
+- `TEAM_HINT_TOOLS` 从 7 个增加到 8 个，新增 `workflow`；`subagent` / `subagent_fork` 继续覆盖。只追加 tool description，不改名称、参数、结构、tool_choice 或消息。
+- 保留 4.0.1 的 content 保留修复：`stripToolCallContent` 默认 false，tool-call assistant 的已有 text 不再被清空。
+- 保留 882 seed、compaction register、Team hint、tool-step reseed、nearest guidance 等既有配置。
+- 版本升到 4.1.0；README、locale、package 描述同步。
+
+## 4.0.1
+
+- 修复 tool-call assistant 的 content 被默认清空：DSH 接受非空 content；`stripToolCallAssistantContent()` 改为仅在显式 `stripToolCallContent: true` 时执行，默认保留已有正文、tool-step anchor 和旧 mirror 留下的 text。
+- `wireMessage()` 在 tool-call assistant 上不再丢弃已有 text；`mirrorToolSteps` 仍只在显式开启时用 reasoning 填充空 content。
+- 默认配置增加 `stripToolCallContent: false`；补回归测试覆盖 adapter/delegated 两条路径、显式 strip opt-in、tool-step anchor 保留。
+- 版本升到 4.0.1；README、locale、package 描述同步。
+
 ## 4.0.0
 
 - 提升 DeepSeek V4.1 Flash 的规划与执行能力：seed 继续使用仿 Kimi K3.1 Pro 的完整决策轨迹（任务复述 → 约束 → 候选 A/B → 风险检查 → 选定 → 祈使收尾）；本版以 live 的 882 字符抽象决策版为准，保留具体候选动作与选择理由，不退回抽象词表。

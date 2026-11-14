@@ -33,12 +33,13 @@ const TOOL_STEP_ANCHOR = "Need continue from the tool result. Should keep the pl
 const NEAREST_GUIDANCE = "Need continue from the latest result and keep the whole picture in view. Should choose the next concrete action. Need proceed.";
 // Team outgoing register instruction (config.teamRegisterHint). Appended to the
 // description of tools whose payload is direct speech/task sent to another agent
-// (send_message / spawn_teammate / subagent / team_task_* / remote_send_message).
+// (send_message / spawn_teammate / subagent / subagent_fork / team_task_* /
+// remote_send_message / workflow).
 // Soft distribution, not a rigid rule. English is explicit: the outgoing register
 // must be English collective voice even when the surrounding task is Chinese;
 // quoted user task text stays verbatim.
-const TEAM_REGISTER_HINT = "Write in English in the planning register. Use Need / Should / Could / Can / Must / May as natural modal openers, and use We need / We should / We can / Let's for collective moves. Vary the sentence shape: mix modal-first sentences with ordinary declaratives and direct imperatives; do not repeat one opener in every sentence. In a longer message, use at least two different modal openers and at least one ordinary sentence. Map the word to the job: Need = required next action; Should = quality or constraint; Could / Can = option or capability; Must = hard limit; Let's = shared next move. Every message or task sent to a teammate is a prompt to that model; make the target, next action, constraints, and expected evidence explicit. Keep any quoted user task verbatim. Keep it natural and concrete.";
-const TEAM_HINT_TOOLS = new Set(['send_message', 'spawn_teammate', 'subagent', 'subagent_fork', 'team_task_create', 'team_task_update', 'remote_send_message']);
+const TEAM_REGISTER_HINT = "Write in English in the planning register. Use Need / Should / Could / Can / Must / May as natural modal openers, and use We need / We should / We can / Let's for collective moves. Vary the sentence shape: mix modal-first sentences with ordinary declaratives and direct imperatives; do not repeat one opener in every sentence. In a longer message, use at least two different modal openers and at least one ordinary sentence. Map the word to the job: Need = required next action; Should = quality or constraint; Could / Can = option or capability; Must = hard limit; Let's = shared next move. Every message, task, spawn prompt, sub-agent prompt, or workflow agent(prompt) task sent to a teammate or sub-agent is a prompt to that model; make the target, next action, constraints, and expected evidence explicit. Keep any quoted user task verbatim. Keep it natural and concrete.";
+const TEAM_HINT_TOOLS = new Set(['send_message', 'spawn_teammate', 'subagent', 'subagent_fork', 'team_task_create', 'team_task_update', 'remote_send_message', 'workflow']);
 // Persistent program-text guidance (config.toolDescriptionSeed). Appended to tool
 // descriptions so the collective register is present in the program text the model
 // reads on EVERY tool step — cumulative corrective force, unlike the ephemeral
@@ -48,7 +49,7 @@ const TOOL_DESC_GUIDANCE = "Plan in the need-first register: Need / Should / Can
 const TASK_POLICY = 'Reasoning register for this task: start with Need or Should; use Can / Could for options; use Must for constraints; keep the plan concrete and evidence-first.';
 const TASK_POLICY_HEAD = TASK_POLICY.slice(0, 40);
 const SEED_HEAD = SEED.slice(0, 48);
-const PLUGIN_VERSION = '4.0.0';
+const PLUGIN_VERSION = '4.1.0';
 const SEED_HASH = createHash('sha256').update(SEED).digest('hex').slice(0, 16);
 // External injection audit (方案 A): third-party plugins cannot write in-log
 // plugin records (appendPluginRecord is first-party-only, session README:72)
@@ -910,6 +911,9 @@ function sanitizeToolDefinitions(tools) {
   return changed ? next : tools;
 }
 
+// Legacy opt-in cleanup. DSH accepts non-empty tool-call assistant content; by
+// default the plugin preserves text that was already present or appended by a
+// tool-step anchor. Set stripToolCallContent: true only for an A/B cleanup run.
 function stripToolCallAssistantContent(messages) {
   if (!Array.isArray(messages)) return messages;
   let changed = false;
@@ -953,7 +957,7 @@ function wireMessage(message, mirror = true, mirrorToolSteps = false) {
     if (toolCalls.length > 0) {
       const mirroredText = mirror && mirrorToolSteps
         ? (text.trim().length > 0 ? text : reasoning)
-        : '';
+        : text;
       return {
         role: 'assistant',
         content: mirroredText,
@@ -1264,10 +1268,8 @@ class WeNeedNativeAdapter {
       : reasoned;
     const mirror = this.config.mirror !== false;
     const mirrorToolSteps = this.config.mirrorToolSteps === true;
-    const allowToolStepContent = mirrorToolSteps
-      || ['content', 'both'].includes(String(this.config.toolStepAnchor ?? 'off').toLowerCase())
-      || ['content', 'both'].includes(String(this.config.postCompactionSeed ?? 'off').toLowerCase());
-    const contentSafe = allowToolStepContent ? anchored : stripToolCallAssistantContent(anchored);
+    const stripToolCallContent = this.config.stripToolCallContent === true;
+    const contentSafe = stripToolCallContent ? stripToolCallAssistantContent(anchored) : anchored;
     const sanitizeEnabled = this.config.sanitizeProgram !== false;
     const sanitizedMessages = sanitizeEnabled ? sanitizeProgramMessages(contentSafe) : contentSafe;
     const guidedMessages = applyNearestGuidance(sanitizedMessages, this.config.nearestGuidance, NEAREST_GUIDANCE, scopeStart);
@@ -1544,12 +1546,10 @@ export function apply(ctx, config = {}) {
         ? anchorEmptyToolPlan(reasonedMessages, config.toolStepAnchor, TOOL_STEP_ANCHOR, scopeStart)
         : reasonedMessages;
       const anchorChanged = anchoredMessages !== reasonedMessages;
-      const allowToolStepContent = config.mirrorToolSteps === true
-        || ['content', 'both'].includes(String(config.toolStepAnchor ?? 'off').toLowerCase())
-        || ['content', 'both'].includes(String(config.postCompactionSeed ?? 'off').toLowerCase());
-      const contentSafeMessages = allowToolStepContent
-        ? anchoredMessages
-        : stripToolCallAssistantContent(anchoredMessages);
+      const stripToolCallContent = config.stripToolCallContent === true;
+      const contentSafeMessages = stripToolCallContent
+        ? stripToolCallAssistantContent(anchoredMessages)
+        : anchoredMessages;
       const sanitizeEnabled = config.sanitizeProgram !== false;
       const sanitizedMessages = sanitizeEnabled ? sanitizeProgramMessages(contentSafeMessages) : contentSafeMessages;
       const sanitizedTools = sanitizeEnabled ? sanitizeToolDefinitions(options.tools) : options.tools;

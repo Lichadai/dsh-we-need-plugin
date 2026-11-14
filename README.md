@@ -1,6 +1,8 @@
 # DSH We Need Plugin
 
-> **4.0.0（Kimi 决策型 seed / Team 语态优化）**：seed 使用仿 Kimi K3.1 Pro 的完整决策轨迹（任务复述 → 约束 → 候选 A/B → 风险检查 → 选定 → 收尾）；compaction 与 Team 外发改为 `Need / Should / Could / Can / Must / Let's` 的语义分工与句式混合。最终配置 = 完整 seed bundle + `nearestGuidance: both` + `teamRegisterHint: true` + `toolDescriptionSeed: off`。A/B/C/D 实验配置保留在 `experiments/`，D 仅作对照。
+> **4.1.0（TeamAgent 外发升级 / content 保留 / Kimi 决策型 seed）**：保留 live 4.0.1 的 content 保留修复和 882 seed；Team 外发要求扩展到 **teammate、sub-agent 和 workflow agent(prompt)**，覆盖工具从 7 个增加到 8 个（新增 `workflow`）。其余配置不变：完整 seed bundle + `nearestGuidance: both` + `teamRegisterHint: true` + `toolDescriptionSeed: off`。
+>
+> **4.0.1 修复（保留在 4.1.0）**：带 `tool_calls` 的 assistant 消息默认保留 `content`（包括已有正文、tool-step 追加的 anchor/seed），不再在发 wire 前清空；只有显式配置 `stripToolCallContent: true` 才执行旧版清理。DSH 接受非空 `content`，这不是协议硬限制。
 >
 > 当前 seed（882 字符 / 883 字节，SHA `901a2ed2…`；文件 SHA `94499d6f…`）：
 >
@@ -18,11 +20,11 @@
 
 > 下文 3.0.0 说明仍适用于 seed 注入底座；3.2.0 实验配置与 A/B/C/D 说明保留作历史对照。
 
-> **适用于 DeepSeek V4.1 Flash（DSH 插件 4.0.0）。**
+> **适用于 DeepSeek V4.1 Flash（DSH 插件 4.1.0）。**
 >
 > 稳定的 We Need 思维链，极大提升 DeepSeek V4.1 Flash 的能力；仿 Kimi K3.1 Pro 的决策型 seed 把任务复述、约束、候选 A/B、风险检查、选定与收尾带到当前 task 紧前，减少无效思维，提升计划与执行质量。
 
-> **4.0.0**：当前发布版。已核实支持：**标准模式**、**goal 模式**（goal-only 会话也注入 seed）、**Team Agent 会话**（team/agent/subagent 消息按上下文处理，seed 仍注入真实任务）、**Response API**（openai-responses 签名保留，完整 live 验证待补）；其他模式未验证。4.0.0 新增 Team 外发语态规则：`Need / Should / Could / Can / Must / May` + `We need / We should / We can / Let's` 自然分布，允许普通陈述句与直接祈使句，长消息至少两个不同情态开头。模型匹配默认要求 `DeepSeek` 与 `Flash` 两个词（大小写不敏感）；seed 按 `seed.txt` 实际内容注入。下文旧版 `728/728`、`taskPolicy`、`registerGate`、`mirrorToolSteps` 等只作历史说明，不再代表 4.0.0 默认行为。
+> **4.1.0**：当前发布版。已核实支持：**标准模式**、**goal 模式**（goal-only 会话也注入 seed）、**Team Agent 会话**（team/agent/subagent 消息按上下文处理，seed 仍注入真实任务）、**Response API**（openai-responses 签名保留，完整 live 验证待补）；其他模式未验证。Team 外发语态规则：`Need / Should / Could / Can / Must / May` + `We need / We should / We can / Let's` 自然分布，允许普通陈述句与直接祈使句，长消息至少两个不同情态开头。**4.1.0 TeamAgent 升级**：`TEAM_REGISTER_HINT` 明确覆盖 teammate / sub-agent / workflow agent(prompt)，`TEAM_HINT_TOOLS` 增加 `workflow`（共 8 个）。默认保留 tool-call assistant 的 content；旧的 `stripToolCallAssistantContent()` 只在 `stripToolCallContent: true` 时执行。模型匹配默认要求 `DeepSeek` 与 `Flash` 两个词（大小写不敏感）；seed 按 `seed.txt` 实际内容注入。下文旧版 `728/728`、`taskPolicy`、`registerGate`、`mirrorToolSteps` 等只作历史说明，不再代表 4.1.0 默认行为。
 
 DeepSeek Harness（DSH）Host 插件：不改 tools、不改采样参数，只在每次模型生成前，把 **计划与上一轮思考结果** 放到离模型最近的位置；让 DeepSeek V4.1 Flash 的思维链一路顺承，稳定保持 `We need / Let's / We / Should`。
 
@@ -57,7 +59,7 @@ DSH agent loop
             compaction: append COMPACTION_REGISTER (purpose=compaction)
             post-compaction: seed before new task / anchor after checkpoint
        -> normalizeReasoningChannelMessages()
-       -> stripToolCallAssistantContent()
+       -> stripToolCallAssistantContent() (legacy opt-in; off by default)
        -> sanitizeProgramMessages() / sanitizeToolDefinitions()
        -> wireMessage() (custom adapter) or original provider adapter (delegated)
   -> upstream model
@@ -72,7 +74,7 @@ DSH agent loop
 | system / developer | `role`, `content` | `sanitizeProgramMessages()` 只处理 program text；不改 user/assistant/tool result |
 | user task | `role`, `content`, `source.kind` | 最后一个 task 前插入 assistant seed；contexts 移到 seed 前 |
 | assistant seed | `role`, `content`, `reasoning_content` | `content` 与 `reasoning_content` 同文；不出现 `tool_calls`；只在当前请求生效，不写回会话 |
-| assistant tool-call | `role`, `content`, `reasoning_content`, `tool_calls` | `content` 必须是 `""`；`reasoning_content` 保留该步计划并追加 anchor + seed；`tool_calls` 无 `index` |
+| assistant tool-call | `role`, `content`, `reasoning_content`, `tool_calls` | `content` 默认为空字符串，但已有正文或本插件追加的 anchor/seed 会原样保留；`reasoning_content` 保留该步计划并追加 anchor + seed；`tool_calls` 无 `index` |
 | tool result | `role`, `content`, `tool_call_id` | 原样保留；id 与 assistant tool_calls 一一对应 |
 
 DSH assistant tool-call 的 key 顺序：
@@ -87,7 +89,7 @@ DSH tool_call 对象：
 [id, type, function[name, arguments]]
 ```
 
-- DSH 工具步的 `content` 是空字符串 `""`，不是 `null`，不是数组。
+- DSH 工具步的 `content` 是字符串；没有可见正文时是空字符串 `""`，不是 `null`，不是数组；已有 text block 时默认保留，不强制清空。
 - `reasoning_content` 是字符串；不出现 `reasoning_details` / `reasoning` 别名。
 - `arguments` 是 JSON 字符串。
 - 一个 assistant 只保留一个 reasoning block，避免上游只读取第一个签名。
@@ -98,11 +100,11 @@ DSH tool_call 对象：
 |---|---|---|
 | assistant tool-call key 顺序 | `role`, `content`, `tool_calls`, `reasoning_content` | `role`, `content`, `reasoning_content`, `tool_calls` |
 | tool_call 的 `index` | 必须有 | 必须没有 |
-| 工具步 `content` | 通常 mirror 当前 reasoning | 必须是 `""` |
+| 工具步 `content` | 通常 mirror 当前 reasoning | 默认保留已有正文；没有正文时为 `""` |
 | reasoning 来源 | `reasoning_content`，必要时 mirror 到 content | `reasoning_content` 字符串 |
 | 历史回放 | 全量历史 mirror | 当前 task/checkpoint 之后才改写 |
 
-这也是为什么插件在 DSH 上不采用 Qoder 的 content mirror：DSH 的 tool-call assistant 必须保持 `content=""`；把计划放进 content 会破坏 DSH 契约，也容易让最近的可见正文压过 reasoning。
+这也是为什么插件在 DSH 上默认不做 Qoder 式的全量 content mirror：DSH 接受非空 content，但默认保留模型自己已有的正文，并把工具步计划追加在 reasoning_content；把历史 reasoning 全量抄进 content 容易放大旧漂移，也容易让最近的可见正文压过 reasoning。需要 A/B 时才显式开启 `mirrorToolSteps`。
 
 ### T4. 我们在哪里插入或改写
 
@@ -114,7 +116,7 @@ DSH tool_call 对象：
 | 压缩请求 | `appendCompactionRegister()` | 在摘要指令末尾追加 `COMPACTION_REGISTER`；checkpoint 使用 We/Let's 语态 | 否 |
 | 压缩后 | `anchorAfterCompaction()` | 有新 task 时走 task 前 seed；无新 task 且存在 tool-call assistant 时，把 seed 补进其 reasoning | 否 |
 | reasoning 通道归一 | `normalizeReasoningChannelMessages()` | 合并重复 reasoning block；删除 `reasoning_content` / `reasoning_details` 别名；保留 provider 原始 replay signature | 否 |
-| tool-call assistant 正文 | `stripToolCallAssistantContent()` | adapter 与 delegated 路径发 wire 前删除 text block，保持 `content=""`；保留 reasoning、tool_calls、tool result | 否 |
+| tool-call assistant 正文 | `stripToolCallAssistantContent()` | 仅显式 `stripToolCallContent: true` 时删除 text block；默认保留已有正文、reasoning、tool_calls、tool result | 否 |
 | system/developer/tool 定义 | `sanitizeProgramMessages()` / `sanitizeToolDefinitions()` | 只对 program text 做中性化；user task、assistant 历史、tool result 不改 | 否 |
 | skill catalog | `filterSkillCatalog()` | 删除指定的 skill catalog 行；不改 task | 否 |
 | task 入口 | `isTaskUser()` / `CONTEXT_SOURCE_KINDS` | 已知 context kind 排除；`user`、`goal`、`schedule`、`tool-goal` 及未知 kind 走内容判断 | 否 |
@@ -124,7 +126,7 @@ DSH tool_call 对象：
 ```text
 ... user task ...
 assistant(tool_calls):
-  content = ""
+  content = "" 或已有可见正文（保留）
   reasoning_content = "<模型本步计划>\n\n<TOOL_STEP_ANCHOR>\n\n<seed>"
   tool_calls = [ { id, type: "function", function: { name, arguments } } ]
 tool:
@@ -134,7 +136,7 @@ tool:
 
 - 不新增 assistant 消息；不把 seed 放在 tool result 后面。
 - 下一个请求中，离模型最近的计划材料就是该 assistant 的 `reasoning_content`。
-- 如果入站历史里 tool-call assistant 的 `content` 已有 text（旧 mirror、旧 provider 或旧配置留下），`stripToolCallAssistantContent()` 会在发 wire 前清除；显式 `mirrorToolSteps: true`、`toolStepAnchor: content|both`、`postCompactionSeed: content|both` 是例外，保留原模式。
+- 入站历史里 tool-call assistant 的 `content` 已有 text（旧 mirror、旧 provider 或 tool-step anchor 留下）时，4.1.0 默认原样保留；只有显式 `stripToolCallContent: true` 才清除。
 
 ### T6. 压缩与 goal 的特殊路径
 
@@ -155,7 +157,7 @@ goal：
 
 1. **task 入口需要稳定分类**：`source.kind` 已有 `user`、`goal`、`schedule`、`team-message`、`agent-message`、`subagent-settled`、`compact-checkpoint` 等多种值。建议提供 `isTask` / `taskKind` 或一份权威的 kind 表，避免插件用 allowlist/denylist 猜。
 2. **provider 私有 replay 字段需要隔离**：`source.replayState.blocks[].thinkingSignature` 在 `openai-completions` 是字段名，在 `openai-responses` 是 reasoning item JSON。建议 adapter 暴露当前 wire api，或在 planner 层禁止插件改写 provider 私有签名。
-3. **工具步 content 契约建议在 adapter 层校验**：`content=""`、tool_calls 无 `index`、tool result 配对，最好由 DSH adapter 统一保证，而不是每个插件各自清理。
+3. **工具步 content 契约**：`content` 必须是字符串（无正文时 `""`，有正文时保留），tool_calls 无 `index`，tool result 配对；不要在 adapter 层默认清空已有正文。
 4. **压缩需要可挂载的 hook**：`purpose=compaction` 已能识别；如果能在 checkpoint 生成后提供“安全锚点”事件，插件就不需要猜 checkpoint-only / no tool-call assistant 的落点。
 5. **不建议要求插件改写历史**：插件应只做 task 前 seed、工具步 anchor、压缩 register 三类增量；历史纠正交给 DSH 的 context/compaction 机制。
 6. **辅助请求需要明确 purpose**：标题、建议、压缩等调用应保持稳定标记，插件才能可靠跳过，不污染主对话。
@@ -809,7 +811,7 @@ DSH 还是开发者预览版，升级后先做这几步：
 4. 发一条短任务，确认 llm/stream 仍能拦截
 5. 检查 GenerateOptions 字段：provider/model/messages/tools/purpose/maxTokens
 6. 检查 assistant block 类型是否仍是 text/reasoning/tool-call
-7. 检查工具步字段契约：content=""、tool_calls 无 index、tool pair 完整
+7. 检查工具步字段契约：content 为字符串（默认保留已有正文）、tool_calls 无 index、tool pair 完整
 8. 如果用了 System Prompt section，检查 ctx.get('systemPrompt').section 是否仍可用
 9. 重新跑 npm test 和字段顺序校验
 10. 更新版本号、README、Release
@@ -985,6 +987,10 @@ dsh-we-need-plugin/
 ---
 
 ## 更新说明
+
+**4.1.0**：TeamAgent 外发升级。`TEAM_REGISTER_HINT` 不再只写 teammate，明确覆盖 sub-agent 与 workflow agent(prompt)；`TEAM_HINT_TOOLS` 从 7 个增加到 8 个，新增 `workflow`。保留 4.0.1 的 content 保留修复、882 seed、compaction、Team hint 和 tool-step 配置。只追加 description，不改工具名、参数或结构。
+
+**4.0.1**：修复 tool-call assistant 的 content 被默认清空的问题。`stripToolCallAssistantContent()` 改为仅显式 `stripToolCallContent: true` 时执行；`wireMessage()` 不再把已有 text 丢掉。默认配置在 `cordis.patch.yml` 中明确 `stripToolCallContent: false`，保留 seed、tool-step anchor、旧 mirror 留下的正文。
 
 **3.0.0**：稳定的 We Need 思维链，极大提升 DeepSeek V4.1 Flash 执行计划的连贯性，减少无效思维，显著提升思维质量。支持标准模式 / goal 模式 / Team Agent 会话 / Response API（openai-responses），其他模式未验证（DSH 插件 3.0.0）。工具步重注入 seed 紧贴 task（bundle 默认开启）+ reasoning_content 签名归一；seed 新增 unlimited tokens。
 

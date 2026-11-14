@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "DSH We Need Plugin",
-    "description": "稳定的 We Need 思维链，极大提升 DeepSeek V4.1 Flash 的能力。seed 仿 Kimi K3.1 Pro 的完整决策型 reasoning，包含任务复述、约束、候选 A/B、风险检查、选定与收尾；Team 外发混合 Need / Should / Could / Can / Must / Let's。支持标准模式 / goal 模式 / Team Agent 会话 / Response API（openai-responses），其他模式未验证（DSH 插件 4.0.0）。"
+    "description": "稳定的 We Need 思维链，极大提升 DeepSeek V4.1 Flash 的能力。seed 仿 Kimi K3.1 Pro 的完整决策型 reasoning，包含任务复述、约束、候选 A/B、风险检查、选定与收尾；Team 外发混合 Need / Should / Could / Can / Must / Let's。支持标准模式 / goal 模式 / Team Agent 会话 / Response API（openai-responses），其他模式未验证（DSH 插件 4.1.0，Team 外发覆盖 sub-agent / workflow）。"
   }
 }

@@ -90,6 +90,8 @@ const tools = [
   { name: 'send_message', description: 'Send one message to another Team member.', parameters: { type: 'object', properties: { target: { type: 'string' }, message: { type: 'string' } } } },
   { name: 'spawn_teammate', description: 'Create one named, durable teammate.', parameters: { type: 'object', properties: { name: { type: 'string' } } } },
   { name: 'subagent', description: 'Delegate a self-contained task.', parameters: { type: 'object', properties: { prompt: { type: 'string' } } } },
+  { name: 'subagent_fork', description: 'Delegate a task that inherits this conversation.', parameters: { type: 'object', properties: { prompt: { type: 'string' } } } },
+  { name: 'workflow', description: 'Run a JavaScript workflow that orchestrates subagents.', parameters: { type: 'object', properties: { script: { type: 'string' } } } },
   { name: 'read', description: 'Read a UTF-8 text file.', parameters: { type: 'object', properties: { path: { type: 'string' } } } },
 ];
 const hintHead = TEAM_REGISTER_HINT.slice(0, 48);
@@ -98,13 +100,17 @@ const hinted = appendTeamRegisterHint(tools, true);
 assert.ok(hinted[0].description.includes(hintHead), 'send_message hinted');
 assert.ok(hinted[1].description.includes(hintHead), 'spawn_teammate hinted');
 assert.ok(hinted[2].description.includes(hintHead), 'subagent hinted');
-assert.equal(hinted[3].description, tools[3].description, 'read NOT hinted');
+assert.ok(hinted[3].description.includes(hintHead), 'subagent_fork hinted');
+assert.ok(hinted[4].description.includes(hintHead), 'workflow hinted');
+assert.equal(hinted[5].description, tools[5].description, 'read NOT hinted');
 assert.deepEqual(hinted.map(t => t.name), tools.map(t => t.name), 'names unchanged');
 assert.deepEqual(hinted[0].parameters, tools[0].parameters, 'params unchanged');
 assert.ok(hinted[0].description.startsWith('Send one message to another Team member.'), 'original kept, append-only');
 assert.equal(appendTeamRegisterHint(hinted, true), hinted, 'idempotent');
 // English is explicit (outgoing register must be English even for a Chinese task)
 assert.ok(TEAM_REGISTER_HINT.includes('in English'), 'hint requires English');
+assert.ok(TEAM_REGISTER_HINT.includes('sub-agent'), 'hint explicitly covers sub-agents');
+assert.ok(TEAM_REGISTER_HINT.includes('workflow agent(prompt)'), 'hint explicitly covers workflow agent prompts');
 // coverage: Team dispatch / remote speech tools are hinted too
 const teamTools = [
   { name: 'team_task_create', description: 'Create a task for a teammate.', parameters: {} },
@@ -125,7 +131,7 @@ const tdAll = appendToolDescriptionSeed(tools, 'all');
 assert.ok(tdAll.every(t => (t.description ?? '').includes(tdHead)), 'all tools hinted');
 assert.deepEqual(tdAll.map(t => t.name), tools.map(t => t.name), 'td names unchanged');
 assert.deepEqual(tdAll[0].parameters, tools[0].parameters, 'td params unchanged');
-assert.ok(tdAll[3].description.startsWith('Read a UTF-8 text file.'), 'td original kept, append-only');
+assert.ok(tdAll.find((t) => t.name === 'read').description.startsWith('Read a UTF-8 text file.'), 'td original kept, append-only');
 assert.equal(appendToolDescriptionSeed(tdAll, 'all'), tdAll, 'td idempotent');
 const tdNested = appendToolDescriptionSeed([{ type: 'function', function: { name: 'x', description: 'Do x.', parameters: {} } }], 'all');
 assert.ok(tdNested[0].function.description.includes(tdHead), 'td nested function shape');

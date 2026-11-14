@@ -38,7 +38,7 @@ for (const [name, text] of [
 
 assert.ok(seed.length > 0, 'seed must not be empty');
 assert.ok(Buffer.byteLength(seed) > 0, 'seed bytes must not be empty');
-assert.ok(/^4\.0\./.test(pkg.version), 'package version must be on the 4.0 line');
+assert.equal(pkg.version, '4.1.0', 'package version must be 4.1.0');
 assert.ok(read('index.js').includes("PLUGIN_VERSION = '" + pkg.version + "'"), 'index.js PLUGIN_VERSION must match package.json version');
 assert.ok(pkg.version.includes('local') || readme.includes(seed), 'release README must contain the exact seed text');
 assert.ok(pkg.files.includes('seed.txt'), 'package.json files must include seed.txt');
@@ -50,7 +50,8 @@ assert.ok(patch.includes('targetRules:'), 'patch must declare targetRules');
 assert.ok(patch.includes('[deepseek, flash]') || patch.includes('[deepseek]'), 'targetRules should cover DeepSeek');
 assert.ok(patch.includes('matchName: false'), 'release should match the upstream model id by default');
 assert.ok(patch.includes('mirror: false'), 'DSH must not mirror reasoning into content');
-assert.ok(patch.includes('mirrorToolSteps: false'), 'DSH tool-step content must stay empty');
+assert.ok(patch.includes('mirrorToolSteps: false'), 'DSH must not mirror tool-step reasoning by default');
+assert.ok(patch.includes('stripToolCallContent: false'), 'tool-call content must be preserved by default');
 assert.ok(patch.includes('toolStepAnchor: off'), 'DSH tool-step content must not receive an anchor');
 assert.ok(patch.includes('toolStepReseed: true'), 'release bundle must enable tool-step reseed by default');
 assert.ok(!patch.includes('interceptModels'), 'release should not require provider routes');

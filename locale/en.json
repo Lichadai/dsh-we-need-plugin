@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "DSH We Need Plugin",
-    "description": "Stable We Need reasoning chain: greatly improves DeepSeek V4.1 Flash capability. The seed imitates Kimi K3.1 Pro's full decision reasoning, including task restatement, constraints, candidate A/B, risk check, selection, and closing; Team messages mix Need / Should / Could / Can / Must / Let's. Supports standard mode / goal mode / Team Agent sessions / Response API (openai-responses); other modes unverified (DSH plugin 4.0.0)."
+    "description": "Stable We Need reasoning chain: greatly improves DeepSeek V4.1 Flash capability. The seed imitates Kimi K3.1 Pro's full decision reasoning, including task restatement, constraints, candidate A/B, risk check, selection, and closing; Team messages mix Need / Should / Could / Can / Must / Let's. Supports standard mode / goal mode / Team Agent sessions / Response API (openai-responses); other modes unverified (DSH plugin 4.1.0; Team outgoing covers sub-agents and workflow)."
   }
 }

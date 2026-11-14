@@ -5,6 +5,7 @@
         intercept: true
         mirror: false
         mirrorToolSteps: false
+        stripToolCallContent: false
         toolStepAnchor: off
         toolStepReasoning: anchor-seed
         toolStepReseed: true

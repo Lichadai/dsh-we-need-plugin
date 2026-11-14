@@ -25,7 +25,7 @@ npm pack
 产物：
 
 ```text
-dsh-we-need-plugin-4.0.0.tgz
+dsh-we-need-plugin-4.1.0.tgz
 ```
 
 ## 创建仓库并推送
@@ -35,7 +35,7 @@ git init
 git config user.name "DSH We Need Plugin"
 git config user.email "<id>+<login>@users.noreply.github.com"
 git add .
-git commit -m "release: dsh-we-need-plugin 4.0.0"
+git commit -m "release: dsh-we-need-plugin 4.1.0"
 gh repo create Lichadai/dsh-we-need-plugin --public --source=. --remote=origin --push
 ```
 
@@ -46,9 +46,9 @@ gh repo create Lichadai/dsh-we-need-plugin --public --source=. --remote=origin -
 ## 创建 Release
 
 ```sh
-git tag v4.0.0
-git push origin v4.0.0
-gh release create v4.0.0 ./dsh-we-need-plugin-4.0.0.tgz --notes-file RELEASE-NOTES.md
+git tag v4.1.0
+git push origin v4.1.0
+gh release create v4.1.0 ./dsh-we-need-plugin-4.1.0.tgz --notes-file RELEASE-NOTES.md
 ```
 
 GitHub Actions 也会在 tag push 时创建 Release；手动命令是可选的。
