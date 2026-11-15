@@ -10,7 +10,7 @@ const OPT = { provider: 'opendesign', model: 'deepseek-v4.1-flash', maxTokens: 3
 const text = (v) => [{ type: 'text', text: v }];
 const user = (v, kind) => ({ role: 'user', content: text(v), ...(kind ? { source: { kind } } : {}) });
 const sys = (v) => ({ role: 'system', content: text(v) });
-const REGISTER_HEAD = 'Style requirement: write the checkpoint';
+const REGISTER_HEAD = 'We need write this checkpoint in the same WeNeed register';
 
 // B2: purpose:'compaction' is authoritative even when the text does not match
 // the legacy sniff. Before 2.1.0 this fell through to 'auxiliary' (register lost).

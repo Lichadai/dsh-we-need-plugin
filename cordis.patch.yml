@@ -13,6 +13,7 @@
         compactionRegister: we-need
         mirrorScope: task
         seedInjection: true
+        systemRegister: true
         reorderContexts: true
         sanitizeProgram: true
         nearestGuidance: both

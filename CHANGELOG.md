@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.1.1
+
+- seed 换成 Kimi K3.1 Pro 原文 921 字决策轨迹；不再使用 882 字抽象描述。
+- 新增 `systemRegister`：在 system prompt 末尾追加 WeNeed 规则，规则本身以 We need / Need / Should / Could / Must / Let's 组织；明确示例不是任务、不是上一轮，禁止在 summary/checkpoint 中列成任务。
+- Team hint 改为 WeNeed 语法，保留并覆盖 teammate、sub-agent、workflow agent(prompt) 共 8 个工具。
+- 压缩 register 改为 WeNeed 语法；明确紧接着的 assistant 是 Kimi 示例，实际工作上下文取“上上次”，不得把示例列成任务。
+- 新增 system-register 专属测试；七套件通过。
+- 版本升到 4.1.1；README、locale、package 描述同步。
+
 ## 4.1.0
 
 - TeamAgent 外发升级：`TEAM_REGISTER_HINT` 明确覆盖 teammate、sub-agent 与 workflow agent(prompt)，不再只写 “Every message or task sent to a teammate”。

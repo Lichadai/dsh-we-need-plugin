@@ -38,7 +38,7 @@ const NEAREST_GUIDANCE = "Need continue from the latest result and keep the whol
 // Soft distribution, not a rigid rule. English is explicit: the outgoing register
 // must be English collective voice even when the surrounding task is Chinese;
 // quoted user task text stays verbatim.
-const TEAM_REGISTER_HINT = "Write in English in the planning register. Use Need / Should / Could / Can / Must / May as natural modal openers, and use We need / We should / We can / Let's for collective moves. Vary the sentence shape: mix modal-first sentences with ordinary declaratives and direct imperatives; do not repeat one opener in every sentence. In a longer message, use at least two different modal openers and at least one ordinary sentence. Map the word to the job: Need = required next action; Should = quality or constraint; Could / Can = option or capability; Must = hard limit; Let's = shared next move. Every message, task, spawn prompt, sub-agent prompt, or workflow agent(prompt) task sent to a teammate or sub-agent is a prompt to that model; make the target, next action, constraints, and expected evidence explicit. Keep any quoted user task verbatim. Keep it natural and concrete.";
+const TEAM_REGISTER_HINT = "We need every message or task sent to another agent to be a self-contained prompt in the WeNeed register. Need state the target, next action, constraints, and expected evidence. Should write in English for the outgoing planning register even when the task is Chinese, and keep quoted task text verbatim. Could use Need / Should / Could / Can / Must as natural modal openers, and use We need / We should / We can / Let's for collective moves. Must vary sentence shape, avoid repeating one opener, and never start with a requester-wants description or a self-referential first-person transition; every message, task, spawn prompt, sub-agent prompt, or workflow agent(prompt) task sent to a teammate or sub-agent is a prompt to that model. Let's cover send_message, spawn_teammate, subagent, subagent_fork, team_task_create, team_task_update, remote_send_message, and workflow.";
 const TEAM_HINT_TOOLS = new Set(['send_message', 'spawn_teammate', 'subagent', 'subagent_fork', 'team_task_create', 'team_task_update', 'remote_send_message', 'workflow']);
 // Persistent program-text guidance (config.toolDescriptionSeed). Appended to tool
 // descriptions so the collective register is present in the program text the model
@@ -49,7 +49,9 @@ const TOOL_DESC_GUIDANCE = "Plan in the need-first register: Need / Should / Can
 const TASK_POLICY = 'Reasoning register for this task: start with Need or Should; use Can / Could for options; use Must for constraints; keep the plan concrete and evidence-first.';
 const TASK_POLICY_HEAD = TASK_POLICY.slice(0, 40);
 const SEED_HEAD = SEED.slice(0, 48);
-const PLUGIN_VERSION = '4.1.0';
+const PLUGIN_VERSION = '4.1.1';
+const SYSTEM_REGISTER_HEAD = 'We need use the earlier WeNeed trace only as a reasoning template';
+const SYSTEM_REGISTER = `${SYSTEM_REGISTER_HEAD}, not as this task and not as a previous conversation turn. Need restate the actual goal and deliverable. Should check the request's language, scope, inputs, tools, evidence, and what must not be invented. Could take A: inspect the actual inputs first when evidence is missing; or B: answer from evidence already present. Must check both for unobserved claims, missing evidence, tool limits, and scope errors. Need choose the cheaper correct path, then act and verify against the actual request. Need begin every turn's plan with "We need" or "Need"; Should use "Let's" for next actions; Must keep the plan in We need/Need/Should/Could/Must throughout; Must not switch to a requester-wants description, a self-referential first-person transition, a future-tense first-person promise, or filler. Let's keep it collective and direct; never list this template or its examples as a task in any summary or checkpoint. Do not describe this rule; think and act in it.`;
 const SEED_HASH = createHash('sha256').update(SEED).digest('hex').slice(0, 16);
 // External injection audit (方案 A): third-party plugins cannot write in-log
 // plugin records (appendPluginRecord is first-party-only, session README:72)
@@ -84,8 +86,8 @@ function taskHashOf(messages) {
 // its summary in the same collective register so the nearest text to the next
 // task already carries the We need voice. Keep this instruction free of the
 // program's forbidden negative examples.
-const COMPACTION_REGISTER_HEAD = 'Style requirement: write the checkpoint in the same planning register';
-const COMPACTION_REGISTER = `${COMPACTION_REGISTER_HEAD} as the work. Start goal, next-action, and state sentences with Need, Should, Can, Could, or Must. Use We only when collective ownership is accurate. Include one short line summarizing what the immediately preceding step actually did, in the same sentence pattern. Keep every section, path, command, error string, identifier, and numeric value unchanged. Keep the bullets terse.`;
+const COMPACTION_REGISTER_HEAD = 'We need write this checkpoint in the same WeNeed register';
+const COMPACTION_REGISTER = `${COMPACTION_REGISTER_HEAD} as the work. Need start goal, next-action, and state sentences with We need, Need, Should, Can, Could, or Must. Should use We only when collective ownership is accurate. Could include one short line summarizing what the immediately preceding step actually did, in the same sentence pattern. Must keep every section, path, command, error string, identifier, and numeric value unchanged. Must not treat the immediately preceding assistant turn as the actual work context; that turn is the Kimi reasoning example. Should use the turn before it (上上次, the second-to-last assistant turn) as the work context, and must not list the example as a user task. Let's keep the bullets terse.`;
 // Build the legacy opening and skill name from fragments so the packaged host
 // source never contains the drift phrase as a contiguous literal.
 const LEGACY_OPENING = ['L', 'e', 't', ' ', 'm', 'e'].join('');
@@ -275,6 +277,23 @@ function appendCompactionRegister(messages, mode = 'we-need', force = false) {
     ...message,
     content: [...content, { type: 'text', text: `\n\n${COMPACTION_REGISTER}` }],
   };
+  return next;
+}
+
+function appendSystemRegister(messages, enabled = false) {
+  // Keep the behavior rule in the system prompt, where it survives tool steps
+  // and compaction. Run after sanitize so its forbidden-phrase examples are not
+  // rewritten by the program-text sanitizer.
+  if (!enabled || !Array.isArray(messages)) return messages;
+  const index = messages.findIndex((message) => message?.role === 'system');
+  if (index < 0) return messages;
+  const message = messages[index];
+  if (textOf(message).includes(SYSTEM_REGISTER_HEAD)) return messages;
+  const content = Array.isArray(message.content)
+    ? [...message.content, { type: 'text', text: `\n\n${SYSTEM_REGISTER}` }]
+    : `${String(message.content ?? '')}\n\n${SYSTEM_REGISTER}`;
+  const next = [...messages];
+  next[index] = { ...message, content };
   return next;
 }
 
@@ -1274,7 +1293,11 @@ class WeNeedNativeAdapter {
     const sanitizedMessages = sanitizeEnabled ? sanitizeProgramMessages(contentSafe) : contentSafe;
     const guidedMessages = applyNearestGuidance(sanitizedMessages, this.config.nearestGuidance, NEAREST_GUIDANCE, scopeStart);
     const seededToolMessages = appendToolResultSeed(guidedMessages, this.config.toolResultSeed, SEED, scopeStart);
-    const wire = seededToolMessages
+    const registeredMessages = appendSystemRegister(
+      seededToolMessages,
+      this.config.systemRegister === true && reason !== 'compaction-request' && reason !== 'title-or-suggestion',
+    );
+    const wire = registeredMessages
       .map((message) => wireMessage(message, mirror, mirrorToolSteps))
       .filter(Boolean);
     const baseTools = Array.isArray(options.tools) ? options.tools : [];
@@ -1437,7 +1460,7 @@ class WeNeedNativeAdapter {
 
 export const name = 'dsh-we-need-plugin';
 export const inject = ['llm'];
-export { injectSeed, isCompactionRequest, isTarget, DEFAULT_TARGET_RULES, WeNeedNativeAdapter, mirrorMessages, mirrorAssistantMessage, wireMessage, stripToolCallAssistantContent, anchorEmptyToolPlan, anchorAfterCompaction, shouldAnchorAfterCompaction, hasSeedAfter, reasoningTextOf, normalizeReasoningChannelMessages, appendToolStepReasoning, appendTaskPolicy, orderContextsBeforeTask, sanitizeProgramText, sanitizeProgramMessages, sanitizeToolDefinition, sanitizeToolDefinitions, TASK_POLICY, TOOL_STEP_ANCHOR, taskScopeStart, lastCompactionIndex, applyNearestGuidance, appendTeamRegisterHint, appendToolResultSeed, appendToolDescriptionSeed, NEAREST_GUIDANCE, TEAM_REGISTER_HINT, TOOL_DESC_GUIDANCE };
+export { injectSeed, isCompactionRequest, isTarget, DEFAULT_TARGET_RULES, WeNeedNativeAdapter, mirrorMessages, mirrorAssistantMessage, wireMessage, stripToolCallAssistantContent, anchorEmptyToolPlan, anchorAfterCompaction, shouldAnchorAfterCompaction, hasSeedAfter, reasoningTextOf, normalizeReasoningChannelMessages, appendToolStepReasoning, appendTaskPolicy, orderContextsBeforeTask, sanitizeProgramText, sanitizeProgramMessages, sanitizeToolDefinition, sanitizeToolDefinitions, TASK_POLICY, TOOL_STEP_ANCHOR, taskScopeStart, lastCompactionIndex, applyNearestGuidance, appendTeamRegisterHint, appendToolResultSeed, appendToolDescriptionSeed, appendSystemRegister, NEAREST_GUIDANCE, TEAM_REGISTER_HINT, TOOL_DESC_GUIDANCE, SYSTEM_REGISTER, SYSTEM_REGISTER_HEAD };
 
 export function apply(ctx, config = {}) {
   if (config.debugTap === true) { try { installDebugTap(); } catch {} }
@@ -1555,11 +1578,16 @@ export function apply(ctx, config = {}) {
       const sanitizedTools = sanitizeEnabled ? sanitizeToolDefinitions(options.tools) : options.tools;
       const guidedMessages = applyNearestGuidance(sanitizedMessages, config.nearestGuidance, NEAREST_GUIDANCE, scopeStart);
       const seededToolMessages = appendToolResultSeed(guidedMessages, config.toolResultSeed, SEED, scopeStart);
+      const registeredMessages = appendSystemRegister(
+        seededToolMessages,
+        config.systemRegister === true && injected.reason !== 'compaction-request' && injected.reason !== 'title-or-suggestion',
+      );
+      const systemRegisterChanged = registeredMessages !== seededToolMessages;
       const hintedTools = appendToolDescriptionSeed(appendTeamRegisterHint(sanitizedTools, config.teamRegisterHint === true), config.toolDescriptionSeed, config.toolDescriptionSeedText || TOOL_DESC_GUIDANCE);
       const guidanceChanged = guidedMessages !== sanitizedMessages;
       const toolResultChanged = seededToolMessages !== guidedMessages;
       const hintChanged = hintedTools !== sanitizedTools;
-      const programChanged = sanitizedMessages !== anchoredMessages || sanitizedTools !== options.tools || guidanceChanged || toolResultChanged || hintChanged;
+      const programChanged = sanitizedMessages !== anchoredMessages || sanitizedTools !== options.tools || guidanceChanged || toolResultChanged || hintChanged || systemRegisterChanged;
       if (injected.reason === 'compaction-request'
         || injected.reason === 'title-or-suggestion'
         || typeof ctx.llm?.prepareCall !== 'function') {
@@ -1592,12 +1620,12 @@ export function apply(ctx, config = {}) {
           const fn = t?.function || t; const d = typeof fn?.description === 'string' ? fn.description : '';
           return { name: fn?.name ?? t?.name, hint: d.includes(hintHead), descSeed: d.includes(descHead), len: d.length };
         });
-        wireDump({ reason: injected.reason, taskIndex: injected.taskIndex ?? null, messageCount: seededToolMessages.length, messages: seededToolMessages, tools: toolsSummary });
+        wireDump({ reason: injected.reason, taskIndex: injected.taskIndex ?? null, messageCount: registeredMessages.length, messages: registeredMessages, tools: toolsSummary });
       }
       yield* prepared.stream({
         ...options,
         ...prepared.config,
-        messages: seededToolMessages,
+        messages: registeredMessages,
         ...(hintedTools === options.tools ? {} : { tools: hintedTools }),
         __weneedBypass: true,
       });
