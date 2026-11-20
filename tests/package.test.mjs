@@ -38,7 +38,7 @@ for (const [name, text] of [
 
 assert.ok(seed.length > 0, 'seed must not be empty');
 assert.ok(Buffer.byteLength(seed) > 0, 'seed bytes must not be empty');
-assert.equal(pkg.version, '4.1.1', 'package version must be 4.1.1');
+assert.equal(pkg.version, '4.3.2', 'package version must be 4.3.2');
 assert.ok(read('index.js').includes("PLUGIN_VERSION = '" + pkg.version + "'"), 'index.js PLUGIN_VERSION must match package.json version');
 assert.ok(pkg.version.includes('local') || readme.includes(seed), 'release README must contain the exact seed text');
 assert.ok(pkg.files.includes('seed.txt'), 'package.json files must include seed.txt');
@@ -54,6 +54,8 @@ assert.ok(patch.includes('mirrorToolSteps: false'), 'DSH must not mirror tool-st
 assert.ok(patch.includes('stripToolCallContent: false'), 'tool-call content must be preserved by default');
 assert.ok(patch.includes('toolStepAnchor: off'), 'DSH tool-step content must not receive an anchor');
 assert.ok(patch.includes('toolStepReseed: true'), 'release bundle must enable tool-step reseed by default');
+assert.ok(patch.includes('contentFill: seed-continue-reasoning'), 'release bundle must enable general content fill');
+assert.ok(!/上上次|second-to-last/.test(read('index.js')), 'compaction register must not carry the second-to-last rule');
 assert.ok(!patch.includes('interceptModels'), 'release should not require provider routes');
 assert.ok(!patch.includes('captureDir'), 'release must not contain captureDir');
 assert.ok(!pkg.files.includes('harness.js'), 'release must not ship harness.js');

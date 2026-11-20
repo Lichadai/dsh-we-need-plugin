@@ -1,15 +1,13 @@
 # DSH We Need Plugin
 
-> **4.1.1（Kimi 原文 seed / System register / Team + 压缩 WeNeed 语法）**：seed 换成 Kimi K3.1 Pro 原文 921 字决策轨迹；system 追加 WeNeed 规则；Team 外发与压缩文案改为 WeNeed 语法；压缩明确以“上上次”工作上下文为准。基于 4.1.0 TeamAgent。
->
 > **4.1.0（TeamAgent 外发升级 / content 保留 / Kimi 决策型 seed）**：保留 live 4.0.1 的 content 保留修复和 882 seed；Team 外发要求扩展到 **teammate、sub-agent 和 workflow agent(prompt)**，覆盖工具从 7 个增加到 8 个（新增 `workflow`）。其余配置不变：完整 seed bundle + `nearestGuidance: both` + `teamRegisterHint: true` + `toolDescriptionSeed: off`。
 >
 > **4.0.1 修复（保留在 4.1.0）**：带 `tool_calls` 的 assistant 消息默认保留 `content`（包括已有正文、tool-step 追加的 anchor/seed），不再在发 wire 前清空；只有显式配置 `stripToolCallContent: true` 才执行旧版清理。DSH 接受非空 `content`，这不是协议硬限制。
 >
-> 当前 seed（921 字符 / 1365 字节，SHA `70de6dc3b9…`；文件 SHA `70de6dc3…`）：
+> 当前 seed（882 字符 / 883 字节，SHA `901a2ed2…`；文件 SHA `94499d6f…`）：
 >
 > ```text
-> I need respond to Chinese user "你好 你心情怎么样？感受怎么样" simple greeting asks how mood feelings. Should follow response language Chinese simplified, identity persona Qinglan but no need name perhaps. Should consider AI consciousness/feelings honesty: should not claim human emotions; can respond naturally "你好。我没有真正的心情或感受，不过现在状态很好，准备帮你处理事情。你今天怎么样？" I should embody persona concise direct, no filler. User asks personal, respond perhaps "你好，我这边状态不错。虽然我没有真正像人一样的情绪和感受，但我很乐意陪你聊聊、帮你做事。你今天心情怎么样？" Should avoid overdo "很乐意" per soul? User says skip I'd be happy; but casual appropriate. Could say "你好。我没有人类意义上的心情和感受，不过现在运行状态良好，思路也很清晰。你呢，今天心情怎么样？" This is enough. Should have no tools, no memory. Must perhaps not describe "运行状态良好" as know? It's okay figurative. Desired response straightforward. Perhaps "你好，我这边挺好的。更准确地说，我没有真正的心情或身体感受，但可以理解情绪、陪你聊，也会认真回应你。你今天过得怎么样？" Good. No need identity name unless user asks. Respond Chinese short.
+> We need respond to the current request; the request asks for concrete work. Should follow the request's language, role, and constraints, but no extra identity perhaps. Should consider evidence and honesty: should not claim unobserved facts; can respond naturally "Need inspect the actual inputs first." We should embody a concise, direct plan, no filler. User asks for work, respond perhaps "Need read the actual inputs first." Should avoid overdo "Need proceed" per context? The request says skip filler; but concrete action is appropriate. Could say "Need inspect the actual inputs first." This is enough. Should have no invented tools, no guessed memory. Must perhaps not describe "Need inspect" as done? It is okay as a plan. Desired response straightforward. Perhaps "Need inspect the actual inputs first." Good. No need repeat the task unless asked. Respond by doing the work.
 > ```
 
 > **推荐提示词（带高频规划词）**：写任务时可直接用 `Need / Should / Could / Must / Let's` 承担不同动作。简短事例：
@@ -22,11 +20,11 @@
 
 > 下文 3.0.0 说明仍适用于 seed 注入底座；3.2.0 实验配置与 A/B/C/D 说明保留作历史对照。
 
-> **适用于 DeepSeek V4.1 Flash（DSH 插件 4.1.1）。**
+> **适用于 DeepSeek V4.1 Flash（DSH 插件 4.1.0）。**
 >
 > 稳定的 We Need 思维链，极大提升 DeepSeek V4.1 Flash 的能力；仿 Kimi K3.1 Pro 的决策型 seed 把任务复述、约束、候选 A/B、风险检查、选定与收尾带到当前 task 紧前，减少无效思维，提升计划与执行质量。
 
-> **4.1.0**：上一版（历史）。已核实支持：**标准模式**、**goal 模式**（goal-only 会话也注入 seed）、**Team Agent 会话**（team/agent/subagent 消息按上下文处理，seed 仍注入真实任务）、**Response API**（openai-responses 签名保留，完整 live 验证待补）；其他模式未验证。Team 外发语态规则：`Need / Should / Could / Can / Must / May` + `We need / We should / We can / Let's` 自然分布，允许普通陈述句与直接祈使句，长消息至少两个不同情态开头。**4.1.0 TeamAgent 升级**：`TEAM_REGISTER_HINT` 明确覆盖 teammate / sub-agent / workflow agent(prompt)，`TEAM_HINT_TOOLS` 增加 `workflow`（共 8 个）。默认保留 tool-call assistant 的 content；旧的 `stripToolCallAssistantContent()` 只在 `stripToolCallContent: true` 时执行。模型匹配默认要求 `DeepSeek` 与 `Flash` 两个词（大小写不敏感）；seed 按 `seed.txt` 实际内容注入。下文旧版 `728/728`、`taskPolicy`、`registerGate`、`mirrorToolSteps` 等只作历史说明，不再代表 4.1.0 默认行为。
+> **4.1.0**：当前发布版。已核实支持：**标准模式**、**goal 模式**（goal-only 会话也注入 seed）、**Team Agent 会话**（team/agent/subagent 消息按上下文处理，seed 仍注入真实任务）、**Response API**（openai-responses 签名保留，完整 live 验证待补）；其他模式未验证。Team 外发语态规则：`Need / Should / Could / Can / Must / May` + `We need / We should / We can / Let's` 自然分布，允许普通陈述句与直接祈使句，长消息至少两个不同情态开头。**4.1.0 TeamAgent 升级**：`TEAM_REGISTER_HINT` 明确覆盖 teammate / sub-agent / workflow agent(prompt)，`TEAM_HINT_TOOLS` 增加 `workflow`（共 8 个）。默认保留 tool-call assistant 的 content；旧的 `stripToolCallAssistantContent()` 只在 `stripToolCallContent: true` 时执行。模型匹配默认要求 `DeepSeek` 与 `Flash` 两个词（大小写不敏感）；seed 按 `seed.txt` 实际内容注入。下文旧版 `728/728`、`taskPolicy`、`registerGate`、`mirrorToolSteps` 等只作历史说明，不再代表 4.1.0 默认行为。
 
 DeepSeek Harness（DSH）Host 插件：不改 tools、不改采样参数，只在每次模型生成前，把 **计划与上一轮思考结果** 放到离模型最近的位置；让 DeepSeek V4.1 Flash 的思维链一路顺承，稳定保持 `We need / Let's / We / Should`。
 
@@ -121,7 +119,7 @@ DSH tool_call 对象：
 | tool-call assistant 正文 | `stripToolCallAssistantContent()` | 仅显式 `stripToolCallContent: true` 时删除 text block；默认保留已有正文、reasoning、tool_calls、tool result | 否 |
 | system/developer/tool 定义 | `sanitizeProgramMessages()` / `sanitizeToolDefinitions()` | 只对 program text 做中性化；user task、assistant 历史、tool result 不改 | 否 |
 | skill catalog | `filterSkillCatalog()` | 删除指定的 skill catalog 行；不改 task | 否 |
-| task 入口 | `isTaskUser()` / `CONTEXT_SOURCE_KINDS` | 已知 context kind 排除；`user`、`goal`、`schedule`、`tool-goal` 及未知 kind 走内容判断 | 否 |
+| task 入口 | `isTaskUser()` / `TASK_SOURCE_KINDS` | **白名单（4.3.0）**：仅 `user`、`goal`、`schedule`、`tool-goal` 是任务；其它任何带 `source.kind` 的消息（含未来 DSH 新增种类）默认上下文；只有完全无 kind 的旧式/委派消息走文本兜底 | 否 |
 
 ### T5. 工具步的实际内容流转
 
@@ -152,7 +150,7 @@ tool:
 goal：
 
 - goal 消息的 `source.kind` 是 `goal`，不是 `user`。
-- 2.0.1 的 task 入口使用 deny-list：已知 context kind 排除 `user` 直接作为 task，`goal` / `schedule` / `tool-goal` / 未知 kind 走内容兜底。
+- 4.3.0 起 task 入口使用**白名单**：仅 `user` / `goal` / `schedule` / `tool-goal` 是任务，其它任何带 `source.kind` 的消息（含未来 DSH 新增种类）默认上下文；只有完全无 kind 的旧式/委派消息走文本兜底。（2.0.1–4.2.1 曾用 deny-list：已知 context kind 排除、未知 kind 走内容兜底；该方案在 DSH 新增 `progress-updates-nudge` 等种类时会把提醒误判为 task，4.3.0 反转为白名单从根本上消除该脆弱性。）
 - 因此 goal-only 会话也会在 goal round 前注入 seed；team/agent/subagent/审批/回复等仍按 context 处理。
 
 ### T7. 给 DSH 官方的契约建议
@@ -1011,3 +1009,10 @@ dsh-we-need-plugin/
 ## License
 
 MIT
+
+
+## 4.1.1 seed (exact)
+
+```text
+I need respond to Chinese user "你好 你心情怎么样？感受怎么样" simple greeting asks how mood feelings. Should follow response language Chinese simplified, identity persona Qinglan but no need name perhaps. Should consider AI consciousness/feelings honesty: should not claim human emotions; can respond naturally "你好。我没有真正的心情或感受，不过现在状态很好，准备帮你处理事情。你今天怎么样？" I should embody persona concise direct, no filler. User asks personal, respond perhaps "你好，我这边状态不错。虽然我没有真正像人一样的情绪和感受，但我很乐意陪你聊聊、帮你做事。你今天心情怎么样？" Should avoid overdo "很乐意" per soul? User says skip I'd be happy; but casual appropriate. Could say "你好。我没有人类意义上的心情和感受，不过现在运行状态良好，思路也很清晰。你呢，今天心情怎么样？" This is enough. Should have no tools, no memory. Must perhaps not describe "运行状态良好" as know? It's okay figurative. Desired response straightforward. Perhaps "你好，我这边挺好的。更准确地说，我没有真正的心情或身体感受，但可以理解情绪、陪你聊，也会认真回应你。你今天过得怎么样？" Good. No need identity name unless user asks. Respond Chinese short.
+```

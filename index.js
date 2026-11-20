@@ -31,6 +31,15 @@ const TOOL_STEP_ANCHOR = "Need continue from the tool result. Should keep the pl
 // appended to its reasoning_content. Continue-oriented (not the opening seed),
 // let/need dominant with normal sentences. Field-keyed, append/fill-only.
 const NEAREST_GUIDANCE = "Need continue from the latest result and keep the whole picture in view. Should choose the next concrete action. Need proceed.";
+// General content-fill lever (config.contentFill). DSH accepts non-empty
+// tool-call assistant content, and OpenDesign-style relays rebuild tool turns as
+// content:null + reasoning_content, so the visible history loses the WeNeed voice
+// and continuation/interrupt turns drift. This fills EMPTY assistant content across
+// the whole task scope (user-task and tool-step alike): the latest tool-call turn
+// gets seed + continue-work + its own reasoning; older empty turns get their own
+// reasoning mirrored into content. Never overwrites existing visible speech;
+// replayState-aligned; idempotent via the empty-content guard.
+const CONTINUE_WORK = "Need continue the main work from the actual task. Should treat the trace above as a reasoning template, not as the task itself. Need choose the next concrete action and proceed.";
 // Team outgoing register instruction (config.teamRegisterHint). Appended to the
 // description of tools whose payload is direct speech/task sent to another agent
 // (send_message / spawn_teammate / subagent / subagent_fork / team_task_* /
@@ -49,7 +58,7 @@ const TOOL_DESC_GUIDANCE = "Plan in the need-first register: Need / Should / Can
 const TASK_POLICY = 'Reasoning register for this task: start with Need or Should; use Can / Could for options; use Must for constraints; keep the plan concrete and evidence-first.';
 const TASK_POLICY_HEAD = TASK_POLICY.slice(0, 40);
 const SEED_HEAD = SEED.slice(0, 48);
-const PLUGIN_VERSION = '4.1.1';
+const PLUGIN_VERSION = '4.3.2';
 const SYSTEM_REGISTER_HEAD = 'We need use the earlier WeNeed trace only as a reasoning template';
 const SYSTEM_REGISTER = `${SYSTEM_REGISTER_HEAD}, not as this task and not as a previous conversation turn. Need restate the actual goal and deliverable. Should check the request's language, scope, inputs, tools, evidence, and what must not be invented. Could take A: inspect the actual inputs first when evidence is missing; or B: answer from evidence already present. Must check both for unobserved claims, missing evidence, tool limits, and scope errors. Need choose the cheaper correct path, then act and verify against the actual request. Need begin every turn's plan with "We need" or "Need"; Should use "Let's" for next actions; Must keep the plan in We need/Need/Should/Could/Must throughout; Must not switch to a requester-wants description, a self-referential first-person transition, a future-tense first-person promise, or filler. Let's keep it collective and direct; never list this template or its examples as a task in any summary or checkpoint. Do not describe this rule; think and act in it.`;
 const SEED_HASH = createHash('sha256').update(SEED).digest('hex').slice(0, 16);
@@ -87,7 +96,7 @@ function taskHashOf(messages) {
 // task already carries the We need voice. Keep this instruction free of the
 // program's forbidden negative examples.
 const COMPACTION_REGISTER_HEAD = 'We need write this checkpoint in the same WeNeed register';
-const COMPACTION_REGISTER = `${COMPACTION_REGISTER_HEAD} as the work. Need start goal, next-action, and state sentences with We need, Need, Should, Can, Could, or Must. Should use We only when collective ownership is accurate. Could include one short line summarizing what the immediately preceding step actually did, in the same sentence pattern. Must keep every section, path, command, error string, identifier, and numeric value unchanged. Must not treat the immediately preceding assistant turn as the actual work context; that turn is the Kimi reasoning example. Should use the turn before it (上上次, the second-to-last assistant turn) as the work context, and must not list the example as a user task. Let's keep the bullets terse.`;
+const COMPACTION_REGISTER = `${COMPACTION_REGISTER_HEAD} as the work. Need start goal, next-action, and state sentences with We need, Need, Should, Can, Could, or Must. Should use We only when collective ownership is accurate. Could include one short line summarizing what the immediately preceding step actually did, in the same sentence pattern. Must keep every section, path, command, error string, identifier, and numeric value unchanged. Let's keep the bullets terse.`;
 // Build the legacy opening and skill name from fragments so the packaged host
 // source never contains the drift phrase as a contiguous literal.
 const LEGACY_OPENING = ['L', 'e', 't', ' ', 'm', 'e'].join('');
@@ -126,23 +135,25 @@ const CONTEXT_RE = [
   /the available skill catalog changed/i,
   /\bskill catalog\b/i,
 ];
-const CONTEXT_SOURCE_KINDS = new Set([
-  'agent-instructions',
-  'agent-message',
-  'compact-checkpoint',
-  'model-selection',
-  'ptc-mode',
-  'repeat-tool-reminder',
-  'runtime-context',
-  'skill-catalog',
-  'subagent-report',
-  'subagent-settled',
-  'team-message',
-  'time-context',
-  'tool-jobs',
-  'user-approval',
-  'user-question-reply',
-  'working-directory',
+// Task entry is ALLOWLIST-driven (4.3.0), not a deny-list of known context
+// kinds. Only these structured kinds (plus the real `user` kind) are tasks.
+// Every OTHER typed source.kind is generated context by default — including
+// any brand-new kind a future DSH update introduces (progress nudges, team
+// board notices, skill invocations, title generators, …). This is the
+// fundamental fix for the deny-list fragility: a new reminder kind can never
+// silently become the seed anchor, because it is not on the task allowlist.
+// The safer failure mode is "no injection" (detectable) rather than "seed
+// anchored to a generated nudge" (silent register drift).
+// Known DSH context kinds observed to date (informational; NOT consulted for
+// the decision): agent-instructions, agent-message, compact-checkpoint,
+// dsh-session-title-llm, model-selection, progress-updates-nudge, ptc-mode,
+// repeat-tool-reminder, runtime-context, skill-catalog, skill-invocation,
+// subagent-report, subagent-settled, team-board-notice, team-message,
+// time-context, tool-jobs, user-approval, user-question-reply, working-directory.
+const TASK_SOURCE_KINDS = new Set([
+  'goal',
+  'schedule',
+  'tool-goal',
 ]);
 function textOf(message) {
   const content = message?.content;
@@ -194,10 +205,12 @@ function isContextUser(message) {
   if (isCompaction(message)) return false;
   const kind = message?.source?.kind;
   if (typeof kind === 'string' && kind.length > 0) {
-    if (CONTEXT_SOURCE_KINDS.has(kind)) return true;
-    if (kind === 'user') return false;
-    return isContextUserByText(message);
+    // Allowlist: only `user` and the structured task kinds are NOT context.
+    // Any other typed kind (known or future) is generated context.
+    if (kind === 'user' || TASK_SOURCE_KINDS.has(kind)) return false;
+    return true;
   }
+  // Untyped legacy/delegated requests: fall back to the text sniff.
   return isContextUserByText(message);
 }
 
@@ -214,17 +227,18 @@ function isImageUser(message) {
 }
 
 /**
- * Task entry is deny-list based, not an allowlist of one kind. Known
- * DSH-generated context kinds are excluded; `user`, `goal`, `schedule`,
- * `tool-goal`, and future task kinds fall through to the text/image check.
- * Legacy/delegated requests without source.kind use the same fallback.
+ * Task entry is ALLOWLIST-based (4.3.0). A typed source.kind is a task only
+ * when it is `user` or one of TASK_SOURCE_KINDS (`goal`, `schedule`,
+ * `tool-goal`). Every other typed kind — including any new kind a future DSH
+ * update adds — defaults to context, so a generated reminder/nudge can never
+ * become the seed anchor. Legacy/delegated requests without source.kind fall
+ * back to the text/image check.
  */
 function isTaskUser(message) {
   if (message?.role !== 'user' || isCompaction(message)) return false;
   const kind = message?.source?.kind;
   if (typeof kind === 'string' && kind.length > 0) {
-    if (kind === 'user') return true;
-    if (CONTEXT_SOURCE_KINDS.has(kind)) return false;
+    return kind === 'user' || TASK_SOURCE_KINDS.has(kind);
   }
   return !isContextUserByText(message) && !isImageUser(message);
 }
@@ -308,10 +322,10 @@ function isToolStep(message) {
 }
 
 /**
- * Mirror an assistant turn's reasoning into content. By default tool-call turns
- * are skipped because DSH serializes their content as "". The opt-in
- * includeToolSteps mode is for A/B testing the Qoder-style tool-step anchor.
- * Existing text is never overwritten.
+ * Mirror an assistant turn's reasoning into content. DSH accepts non-empty
+ * tool-call assistant content; tool-call turns are skipped here only as a
+ * conservative default, and includeToolSteps mirrors them too. The contentFill
+ * lever is the preferred general path. Existing text is never overwritten.
  */
 function mirrorAssistantMessage(message, enabled = true, includeToolSteps = false) {
   if (!enabled || message?.role !== 'assistant') return message;
@@ -521,7 +535,20 @@ function withSingleReasoningBlock(message, text) {
 function normalizeReasoningChannelMessages(messages, scopeStart = 0) {
   let changed = false;
   const next = messages.map((message, index) => {
-    if (index < scopeStart || message?.role !== 'assistant' || !Array.isArray(message.content)) return message;
+    // Cross-boundary (4.3.2): normalize EVERY assistant turn's reasoning channel,
+    // including prior-task history before scopeStart. The gateway reads
+    // reasoning_content only; pi-ai replays the field name from the block's
+    // thinkingSignature. On an interrupt/resume turn the pre-interrupt history
+    // falls before the new task boundary — if left un-normalized its signature
+    // stays `reasoning`, pi-ai emits a `reasoning` field the gateway drops, and
+    // the model loses its prior thinking AS reasoning. It then sees the prior
+    // conclusions only as mirrored content speech (external claims), distrusts
+    // them ("that was before the interruption", "my earlier sample was wrong"),
+    // and re-derives confirmed facts (But/Wait/However/first-person cascade). Forcing
+    // the reasoning_content signature on history keeps the prior thinking owned
+    // and continuous. Reasoning TEXT is unchanged; only the wire channel signature
+    // is normalized, so this is faithful continuation, not a rewrite of old tasks.
+    if (message?.role !== 'assistant' || !Array.isArray(message.content)) return message;
     if (reasoningChannelClean(message)) return message;
     const normalized = withSingleReasoningBlock(message, reasoningTextOf(message));
     if (normalized !== message) changed = true;
@@ -609,6 +636,49 @@ function applyNearestGuidance(messages, mode = 'off', guidance = NEAREST_GUIDANC
   const out = [...messages];
   out[index] = message;
   return out;
+}
+
+// General content-fill (config.contentFill = 'seed-continue-reasoning'). Fills
+// EMPTY assistant content so the visible history keeps the WeNeed voice on
+// user-task, interrupt/resume, and tool-step requests alike. The latest
+// assistant(tool_calls) turn WITHIN the current task scope receives seed +
+// continue-work + its own reasoning; EVERY other empty assistant turn — including
+// prior-task history before the boundary (4.3.1 cross-boundary mirror) — receives
+// its own reasoning mirrored into content. Existing visible speech is never
+// overwritten; replayState stays aligned via insertAssistantBlocks; the
+// empty-content guard makes it idempotent.
+function fillAssistantContent(messages, mode = 'off', scopeStart = 0) {
+  if (String(mode ?? 'off').toLowerCase() !== 'seed-continue-reasoning' || !Array.isArray(messages)) return messages;
+  // The seed+continue anchor targets the latest tool-call turn WITHIN the current
+  // task scope (index >= scopeStart). The reasoning-mirror branch deliberately
+  // crosses the task boundary: EVERY empty assistant content turn — including
+  // prior-task history before scopeStart — gets its OWN reasoning mirrored into
+  // content. On an interrupt/resume turn the new correction is the task boundary,
+  // so without this the prior WeNeed history would stay empty-content and the
+  // model would re-open in requester-wants / first-person register. Mirroring a
+  // turn's own reasoning into its own empty content is faithful continuation, not
+  // a rewrite of older tasks (reasoning text and semantics are unchanged).
+  let latest = -1;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (i >= scopeStart && messages[i]?.role === 'assistant' && hasToolCalls(messages[i])) { latest = i; break; }
+  }
+  let changed = false;
+  const next = messages.map((message, index) => {
+    if (message?.role !== 'assistant') return message;
+    if (textOf(message).trim().length > 0) return message;
+    const reasoning = reasoningTextOf(message).trim();
+    let fill;
+    if (index === latest) {
+      fill = reasoning ? `${SEED}\n\n${CONTINUE_WORK}\n\n${reasoning}` : `${SEED}\n\n${CONTINUE_WORK}`;
+    } else {
+      if (!reasoning) return message;
+      fill = reasoning;
+    }
+    const filled = insertAssistantBlocks(message, ['text'], fill);
+    if (filled !== message) changed = true;
+    return filled;
+  });
+  return changed ? next : messages;
 }
 
 // Team outgoing register lever (config.teamRegisterHint). Appends a soft register
@@ -1291,7 +1361,8 @@ class WeNeedNativeAdapter {
     const contentSafe = stripToolCallContent ? stripToolCallAssistantContent(anchored) : anchored;
     const sanitizeEnabled = this.config.sanitizeProgram !== false;
     const sanitizedMessages = sanitizeEnabled ? sanitizeProgramMessages(contentSafe) : contentSafe;
-    const guidedMessages = applyNearestGuidance(sanitizedMessages, this.config.nearestGuidance, NEAREST_GUIDANCE, scopeStart);
+    const contentFilledMessages = fillAssistantContent(sanitizedMessages, this.config.contentFill, scopeStart);
+    const guidedMessages = applyNearestGuidance(contentFilledMessages, this.config.nearestGuidance, NEAREST_GUIDANCE, scopeStart);
     const seededToolMessages = appendToolResultSeed(guidedMessages, this.config.toolResultSeed, SEED, scopeStart);
     const registeredMessages = appendSystemRegister(
       seededToolMessages,
@@ -1460,7 +1531,7 @@ class WeNeedNativeAdapter {
 
 export const name = 'dsh-we-need-plugin';
 export const inject = ['llm'];
-export { injectSeed, isCompactionRequest, isTarget, DEFAULT_TARGET_RULES, WeNeedNativeAdapter, mirrorMessages, mirrorAssistantMessage, wireMessage, stripToolCallAssistantContent, anchorEmptyToolPlan, anchorAfterCompaction, shouldAnchorAfterCompaction, hasSeedAfter, reasoningTextOf, normalizeReasoningChannelMessages, appendToolStepReasoning, appendTaskPolicy, orderContextsBeforeTask, sanitizeProgramText, sanitizeProgramMessages, sanitizeToolDefinition, sanitizeToolDefinitions, TASK_POLICY, TOOL_STEP_ANCHOR, taskScopeStart, lastCompactionIndex, applyNearestGuidance, appendTeamRegisterHint, appendToolResultSeed, appendToolDescriptionSeed, appendSystemRegister, NEAREST_GUIDANCE, TEAM_REGISTER_HINT, TOOL_DESC_GUIDANCE, SYSTEM_REGISTER, SYSTEM_REGISTER_HEAD };
+export { injectSeed, isCompactionRequest, isTarget, DEFAULT_TARGET_RULES, WeNeedNativeAdapter, mirrorMessages, mirrorAssistantMessage, wireMessage, stripToolCallAssistantContent, anchorEmptyToolPlan, anchorAfterCompaction, shouldAnchorAfterCompaction, hasSeedAfter, reasoningTextOf, normalizeReasoningChannelMessages, appendToolStepReasoning, appendTaskPolicy, orderContextsBeforeTask, sanitizeProgramText, sanitizeProgramMessages, sanitizeToolDefinition, sanitizeToolDefinitions, TASK_POLICY, TOOL_STEP_ANCHOR, taskScopeStart, lastCompactionIndex, applyNearestGuidance, fillAssistantContent, appendTeamRegisterHint, appendToolResultSeed, appendToolDescriptionSeed, appendSystemRegister, NEAREST_GUIDANCE, CONTINUE_WORK, TEAM_REGISTER_HINT, TOOL_DESC_GUIDANCE, SYSTEM_REGISTER, SYSTEM_REGISTER_HEAD, COMPACTION_REGISTER, COMPACTION_REGISTER_HEAD, SEED };
 
 export function apply(ctx, config = {}) {
   if (config.debugTap === true) { try { installDebugTap(); } catch {} }
@@ -1576,7 +1647,8 @@ export function apply(ctx, config = {}) {
       const sanitizeEnabled = config.sanitizeProgram !== false;
       const sanitizedMessages = sanitizeEnabled ? sanitizeProgramMessages(contentSafeMessages) : contentSafeMessages;
       const sanitizedTools = sanitizeEnabled ? sanitizeToolDefinitions(options.tools) : options.tools;
-      const guidedMessages = applyNearestGuidance(sanitizedMessages, config.nearestGuidance, NEAREST_GUIDANCE, scopeStart);
+      const contentFilledMessages = fillAssistantContent(sanitizedMessages, config.contentFill, scopeStart);
+      const guidedMessages = applyNearestGuidance(contentFilledMessages, config.nearestGuidance, NEAREST_GUIDANCE, scopeStart);
       const seededToolMessages = appendToolResultSeed(guidedMessages, config.toolResultSeed, SEED, scopeStart);
       const registeredMessages = appendSystemRegister(
         seededToolMessages,
@@ -1584,10 +1656,11 @@ export function apply(ctx, config = {}) {
       );
       const systemRegisterChanged = registeredMessages !== seededToolMessages;
       const hintedTools = appendToolDescriptionSeed(appendTeamRegisterHint(sanitizedTools, config.teamRegisterHint === true), config.toolDescriptionSeed, config.toolDescriptionSeedText || TOOL_DESC_GUIDANCE);
-      const guidanceChanged = guidedMessages !== sanitizedMessages;
+      const contentFillChanged = contentFilledMessages !== sanitizedMessages;
+      const guidanceChanged = guidedMessages !== contentFilledMessages;
       const toolResultChanged = seededToolMessages !== guidedMessages;
       const hintChanged = hintedTools !== sanitizedTools;
-      const programChanged = sanitizedMessages !== anchoredMessages || sanitizedTools !== options.tools || guidanceChanged || toolResultChanged || hintChanged || systemRegisterChanged;
+      const programChanged = sanitizedMessages !== anchoredMessages || sanitizedTools !== options.tools || contentFillChanged || guidanceChanged || toolResultChanged || hintChanged || systemRegisterChanged;
       if (injected.reason === 'compaction-request'
         || injected.reason === 'title-or-suggestion'
         || typeof ctx.llm?.prepareCall !== 'function') {

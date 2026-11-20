@@ -17,6 +17,7 @@
         reorderContexts: true
         sanitizeProgram: true
         nearestGuidance: both
+        contentFill: seed-continue-reasoning
         teamRegisterHint: true
         toolResultSeed: off
         toolDescriptionSeed: off

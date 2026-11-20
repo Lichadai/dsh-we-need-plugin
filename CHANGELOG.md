@@ -1,13 +1,44 @@
 # Changelog
 
-## 4.1.1
+## 4.3.2
 
-- seed 换成 Kimi K3.1 Pro 原文 921 字决策轨迹；不再使用 882 字抽象描述。
-- 新增 `systemRegister`：在 system prompt 末尾追加 WeNeed 规则，规则本身以 We need / Need / Should / Could / Must / Let's 组织；明确示例不是任务、不是上一轮，禁止在 summary/checkpoint 中列成任务。
-- Team hint 改为 WeNeed 语法，保留并覆盖 teammate、sub-agent、workflow agent(prompt) 共 8 个工具。
-- 压缩 register 改为 WeNeed 语法；明确紧接着的 assistant 是 Kimi 示例，实际工作上下文取“上上次”，不得把示例列成任务。
-- 新增 system-register 专属测试；七套件通过。
-- 版本升到 4.1.1；README、locale、package 描述同步。
+- **reasoning_content 通道归一跨任务边界（中断续作"重新推导"级联的根因修复）**：`normalizeReasoningChannelMessages` 去掉 `index < scopeStart` 跳过，**所有 assistant 回合（含边界前历史）的 reasoning 签名都归一成 `reasoning_content`**。
+- 根因（4.3.1 live wire + 逐字取证）：网关只读 `reasoning_content`，pi-ai 按 block 的 `thinkingSignature` 回放字段名。中断续作时历史在边界前不被归一 → 签名 stays `reasoning` → pi-ai 发 `reasoning` 字段被网关丢 → 模型失去"自己之前的思考"。4.3.1 镜像把 reasoning 塞进 content（可见话语），模型看得到前文但当作**外部断言**而非自己的思考 → 不信任中断前结论（"But that was before the interruption"/"my earlier sample was wrong"/"task is a trap/injected false premise"）→ 重新推导已确认颜色 → But×44/maybe×20/Wait×6/However×4 级联，第一个 letMe 由"Wait—could the beak actually be a different orange?"（自己刚采样确认 #ffa500 又怀疑）触发。
+- 修复后历史 reasoning 以 `reasoning_content` 身份续上 → 模型**拥有**中断前的思考 → 顺着续而非重审。reasoning 文本不变，只归一通道签名（`withSingleReasoningBlock` + `replaySignatureFor`），幂等（`reasoningChannelClean` 守卫）。
+- 与 4.3.1 互补：4.3.1 修可见 content（起句 The user→We need），4.3.2 修 reasoning 通道归属（消除重新推导/However 级联）。两者都跨边界，使中断续作的通道处理与正常不中断续作一致。
+- 测试：新增 `tests/reasoning-channel-432.test.mjs`（边界前历史签名归一为 reasoning_content、文本不变、wire 发 reasoning_content、tool_calls 保留、幂等、多回合、可见话语不动）。
+- 版本升到 4.3.2；package 描述同步。
+
+## 4.3.1
+
+- **contentFill 跨任务边界镜像历史（中断/续作语态接续修复）**：`fillAssistantContent` 的 reasoning 镜像分支不再被 `scopeStart` 挡住——**所有空 content 的 assistant 回合（含当前任务边界之前的历史）都填上它自己的 reasoning**；只有当前任务段最新工具回合维持 `seed+continue-work+reasoning`（`latest` 限定 `index>=scopeStart`）。
+- 根因（live wire 取证）：4.3.0 中断续作复跑，续作轮第一条 reasoning 仍以 "The user wants me to continue… The requester says…" 起句 + letMe（全轮 33840 字符 letMe=41）。wire 显示续作首请求里**中断前 6 个 assistant 回合 content 全空**（WeNeed reasoning 只在 reasoning 通道）；contentFill 因 `scopeStart=taskScopeStart`（边界落在纠正消息之后）跳过历史 → 没把前文续上。OpenDesign 读 content、轻视 reasoning_content → 历史无可见 WeNeed 声音 → 续作重新开局成描述腔。
+- 修复即用户指出的"空的 content 就把 reasoning 弄进来"：复用既有 mirror 语义（`mirrorAssistantMessage` 把回合自身 reasoning 镜像进自身空 content），但由 contentFill 跨边界执行。镜像不改 reasoning 文本/语义，属忠实接续，非改写旧任务。
+- 结构侧（4.3.0 白名单）已验证全对：25/25 请求 seed 紧贴真实任务、nudge 重排到 seed 前、taskHash 不翻转；本版补的是**采纳侧的历史可见语态接续**。
+- 测试：`content-fill.test.mjs` 新增用例 10/11（续作边界前历史空 content 被镜像、当前段最新工具回合仍 seed+continue、历史不重复 seed、reasoning 通道与 replayState 不变）。
+- 版本升到 4.3.1；package 描述同步。
+
+## 4.3.0
+
+- **任务入口反转为白名单（根本性健壮修复）**：`isTaskUser()` / `isContextUser()` 不再依赖 `CONTEXT_SOURCE_KINDS` 黑名单。新增 `TASK_SOURCE_KINDS = {goal, schedule, tool-goal}`，只有 `user` 与该白名单内的 kind 是任务；**其它任何带 `source.kind` 的消息（含未来 DSH 新增的工具/提醒/上下文种类）一律默认上下文**。只有完全无 kind 的旧式/委派消息才走文本/图片兜底。
+- 解决的脆弱性：4.2.1 靠把 `progress-updates-nudge` 等新种类逐个加进黑名单来修复误判；DSH 下次再新增种类仍会复发。白名单使「未知种类 → 上下文」成为默认安全失败模式（表现为可检测的 `no-user-task` 不注入，而非静默把 seed 锚到提醒上导致语态漂移）。
+- 关键性质：带 kind 的消息以 kind 为准，**即使其文本看起来像真实任务**（如 “Need refactor the whole module now.”）也不会抢占锚点；`orderContextsBeforeTask()` 自动把任何新上下文种类重排到真实任务之前，seed/reasoning/content 始终紧贴真实 task。
+- 保留 `goal` / `schedule` / `tool-goal` 为任务（goal-only 会话仍注入 seed）；保留 4.2.x 的 contentFill、压缩 register、Team hint、tool-step reseed、nearest guidance 等全部配置。
+- 测试：`features-2.1.0.test.mjs` 把 `future-task-kind` 断言由「任务」翻转为「上下文」；新增 `tests/allowlist-430.test.mjs`（任意新种类→上下文、任务样文本不抢锚、新种类单独出现→no-user-task、白名单四种仍为任务、无 kind 文本兜底、工具步新种类重排到 seed 之前）。
+- 版本升到 4.3.0；README task 入口表/goal 说明、package 描述同步。
+
+## 4.2.1
+
+- 修复 DSH 连续工具调用进度提醒 `progress-updates-nudge` 被误判为 task：长任务中断/续作时该提醒抢占 seed 锚点，导致首句漂移回 lazy 语态（letMe 计数回升）。把 `progress-updates-nudge`、`team-board-notice`、`skill-invocation`、`dsh-session-title-llm` 加入 `CONTEXT_SOURCE_KINDS`；`goal` / `tool-goal` 仍为任务。
+- 新增 `tests/context-kinds-421.test.mjs` 覆盖上述种类与工具步重排。实测中断轮 reasoning 23048 字符 `letMe=0`（4.2.0 为 15）。
+- 版本升到 4.2.1。
+
+## 4.2.0
+
+- **通用 content 填充杠杆 `contentFill: seed-continue-reasoning`**：把空 assistant content 填为 `seed + continue-main-work + reasoning 复制`（最新工具调用轮），更早的空 content 轮镜像 reasoning；覆盖 user-task 与工具步，保住中断/续作语态，弥补 DSH 插件无 proxy mirror 的缺口。
+- 简化 `COMPACTION_REGISTER` 为正常 WeNeed 语态，删除「上上次 / second-to-last」规则（content 填充已保住前步 reasoning，无需特提醒）。
+- 清除「工具步 content 必须为空」的错误结论：`stripToolCallContent` 默认 false，content 可为非空可见正文。
+- 新增 `tests/content-fill.test.mjs`；版本升到 4.2.0。
 
 ## 4.1.0
 

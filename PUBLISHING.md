@@ -18,40 +18,50 @@ gh auth status
 ```sh
 npm test
 npm run test:package
-for t in injection features-2.1.0 toolstep-reseed signature-normalize nearest-output-ab package; do node tests/$t.test.mjs; done
+for t in tests/*.test.mjs; do node "$t"; done
 npm pack
 ```
 
-产物：
+产物（`files` 字段只含运行文件，tests/.github/bin 不进 tgz）：
 
 ```text
-dsh-we-need-plugin-4.1.1.tgz
+dsh-we-need-plugin-4.3.2.tgz
 ```
 
-## 创建仓库并推送
+`npm pack` 字节可复现：同内容 + 同 package.json 产出同一 tgz（CI 与本地一致）。
+
+## 上传（GitHub Git Data API 整树替换）
+
+本项目用 Git Data API 整树替换上传：blob → tree → commit（parent=main）→ force-update main，**旧文件自动清除**（等价于"清空云端再粘贴新版"，原子且保留历史）。随后 release create/upload tgz。发布脚本见 `tmp/publish-4.3.2.mjs`（按版本复制改 `VERSION` / `REPO_DIR` / `TARBALL` / `NOTES`）。
+
+staging 必须是**完整 repo**：运行文件 + `tests/`（CI `npm test` 需要）+ 脚手架（`.github/workflows/release.yml`、`bin/`、`.gitattributes`、`.gitignore`、`PUBLISHING.md`、`RELEASE-NOTES.md`）。live 安装目录只有运行文件，缺 tests/脚手架，不能直接当 staging。
+
+```sh
+node tmp/publish-4.3.2.mjs
+```
+
+若改用 git push：
 
 ```sh
 git init
 git config user.name "DSH We Need Plugin"
 git config user.email "<id>+<login>@users.noreply.github.com"
 git add .
-git commit -m "release: dsh-we-need-plugin 4.1.1"
+git commit -m "release: dsh-we-need-plugin 4.3.2"
 gh repo create Lichadai/dsh-we-need-plugin --public --source=. --remote=origin --push
 ```
 
 使用 GitHub 的 noreply 邮箱，不要使用私人邮箱。
 
-如果 `git push` 被网络重置，可以改用 GitHub Git Data API 上传文件、commit、tag 和 Release；本项目的上传脚本是 `tools/publish-release-api.mjs`。
-
 ## 创建 Release
 
 ```sh
-git tag v4.1.1
-git push origin v4.1.1
-gh release create v4.1.0 ./dsh-we-need-plugin-4.1.1.tgz --notes-file RELEASE-NOTES.md
+git tag v4.3.2
+git push origin v4.3.2
+gh release create v4.3.2 ./dsh-we-need-plugin-4.3.2.tgz --notes-file RELEASE-NOTES.md --latest
 ```
 
-GitHub Actions 也会在 tag push 时创建 Release；手动命令是可选的。
+GitHub Actions（`.github/workflows/release.yml`）也会在 tag push 时 `npm test` + `npm run test:package` + `npm pack` 字节复现 tgz 并 create/upload release；手动命令与 CI 产物一致。
 
 ## npm（可选）
 

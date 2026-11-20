@@ -1,8 +1,8 @@
 {
   "name": "dsh-we-need-plugin",
-  "version": "4.1.1",
+  "version": "4.3.2",
   "type": "module",
-  "description": "稳定的 We Need 思维链，极大提升 DeepSeek V4.1 Flash 的能力。seed 使用 Kimi K3.1 Pro 原文决策轨迹；system 追加 WeNeed 推理规则，Team 外发和压缩均使用 Need/Should/Could/Must/Let's 句式，压缩以上上次工作上下文为准。支持标准模式 / goal 模式 / Team Agent 会话；Team 外发覆盖 teammate、sub-agent 与 workflow agent prompt。DSH 插件 4.1.1。",
+  "description": "稳定的 We Need 思维链，极大提升 DeepSeek V4.1 Flash 的能力。seed 使用 Kimi K3.1 Pro 原文决策轨迹；system 追加 WeNeed 推理规则；通用 content 填充把 seed+continue-work+reasoning 写进空 content（覆盖 user-task 与工具步），并把历史空 content 跨任务边界镜像上各自 reasoning、历史 reasoning 通道签名跨边界归一为 reasoning_content（中断/续作时保住前文可见语态与思考归属，避免重新推导已确认事实）；任务识别白名单（仅 user/goal/schedule/tool-goal 是任务，其它任何带 kind 的消息默认上下文），未来 DSH 新增工具/提醒种类不会再抢占 seed 锚点；Team 外发和压缩均使用 Need/Should/Could/Must/Let's 句式。支持标准模式 / goal 模式 / Team Agent 会话；Team 外发覆盖 teammate、sub-agent 与 workflow agent prompt。DSH 插件 4.3.2。",
   "license": "MIT",
   "author": "DSH We Need Plugin contributors",
   "repository": {

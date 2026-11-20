@@ -41,9 +41,12 @@ const si = mixed.messages.findIndex(m => m.role === 'assistant');
 const gi = mixed.messages.findIndex(m => m.source?.kind === 'goal');
 assert.ok(si >= 0 && gi > si, 'seed before goal');
 
-// B1: user kind is always a task; unknown future kind falls back to text.
+// B1 (4.3.0 allowlist): user kind is always a task. An unknown TYPED kind is
+// context by default (no injection) so a future DSH-generated kind can never
+// become the seed anchor; only UNTYPED messages fall back to the text sniff.
 assert.equal(injectSeed([sys('s'), user('real request', 'user')], OPT, MODEL).injected, true);
-assert.equal(injectSeed([sys('s'), user('a real request', 'future-task-kind')], OPT, MODEL).injected, true);
+assert.equal(injectSeed([sys('s'), user('a real request', 'future-task-kind')], OPT, MODEL).injected, false);
+assert.equal(injectSeed([sys('s'), user('a real request')], OPT, MODEL).injected, true);
 
 // B1: tool-goal / schedule are task kinds (fall through), not context.
 assert.equal(injectSeed([sys('s'), user('scheduled work', 'schedule')], OPT, MODEL).injected, true);

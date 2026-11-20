@@ -77,11 +77,16 @@ const sigOf = (m) => m.source.replayState.blocks[0].thinkingSignature;
   assert.equal(sigOf(out2[0]), 'reasoning', 'non-completions keeps non-alias signature');
 }
 
-// scope: messages before scopeStart are not touched.
+// scope (4.3.2): normalization now CROSSES the task boundary. Messages before
+// scopeStart (prior-task history on interrupt/resume) ARE normalized so their
+// reasoning keeps reasoning_content identity and the gateway reads it. Previously
+// task-scoped (untouched), which dropped the history 'reasoning' field at the
+// gateway and made the resume turn re-litigate confirmed facts. Text is preserved.
 {
   const old = toolCallAssistant('reasoning');
   const out = normalizeReasoningChannelMessages([old], 1);
-  assert.equal(out[0], old, 'out-of-scope message untouched');
+  assert.equal(sigOf(out[0]), 'reasoning_content', 'out-of-scope history normalized cross-boundary (4.3.2)');
+  assert.equal(reasoningTextOf(out[0]), PLAN, 'history plan text preserved');
 }
 
 console.log('signature-normalize: all assertions passed');
