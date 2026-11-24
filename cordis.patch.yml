@@ -18,6 +18,7 @@
         sanitizeProgram: true
         nearestGuidance: both
         contentFill: seed-continue-reasoning
+        seedOrientation: off
         teamRegisterHint: true
         toolResultSeed: off
         toolDescriptionSeed: off

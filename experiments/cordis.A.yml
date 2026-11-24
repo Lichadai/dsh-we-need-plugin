@@ -1,0 +1,24 @@
+# A/B/C experiment — variant A (original base: no seed, no reorder) + nearest lever.
+# A↔B isolates reordering. Seed bundle OFF (seedInjection false, toolStepReasoning
+# anchor-only, postCompactionSeed off). Common nearest lever ON.
+- insert:
+    - id: dsh-we-need-plugin
+      name: 'dsh-we-need-plugin'
+      config:
+        intercept: true
+        mirror: false
+        mirrorToolSteps: false
+        toolStepAnchor: off
+        toolStepReasoning: anchor
+        toolStepReseed: true
+        postCompactionSeed: off
+        compactionRegister: we-need
+        mirrorScope: task
+        seedInjection: false
+        reorderContexts: false
+        sanitizeProgram: true
+        nearestGuidance: both
+        teamRegisterHint: true
+        matchName: false
+        targetRules:
+          - [deepseek, flash]

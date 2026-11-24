@@ -1,0 +1,24 @@
+# A/B/C experiment — variant B (3.0 minus seed, keep reorder) + nearest lever.
+# A↔B isolates reordering (only reorderContexts flips vs A). B↔C isolates the seed
+# bundle. Seed bundle OFF here. Common nearest lever ON.
+- insert:
+    - id: dsh-we-need-plugin
+      name: 'dsh-we-need-plugin'
+      config:
+        intercept: true
+        mirror: false
+        mirrorToolSteps: false
+        toolStepAnchor: off
+        toolStepReasoning: anchor
+        toolStepReseed: true
+        postCompactionSeed: off
+        compactionRegister: we-need
+        mirrorScope: task
+        seedInjection: false
+        reorderContexts: true
+        sanitizeProgram: true
+        nearestGuidance: both
+        teamRegisterHint: true
+        matchName: false
+        targetRules:
+          - [deepseek, flash]

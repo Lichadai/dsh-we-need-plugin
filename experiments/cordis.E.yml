@@ -1,0 +1,29 @@
+# Variant E — field-keyed guidance ONLY (no seed injection) + English Team register.
+# 用户要求：仅往输出字段（content / reasoning_content）和工具字段（description）追加引导，
+# 不注入 seed 假轮次；并加回 Team 用英文交流的规定格式（集体语态）。
+# 与 A 的区别：E 开 toolDescriptionSeed:all（工具字段引导）+ reorderContexts:true，
+# teamRegisterHint 用源里已精修的英文 hint（"Write in English…" + 7 工具覆盖）。
+# 注意：toolDescriptionSeed:all 在 §114.9/114.10 已证 D≈C（语态弱正向、质量未证、成本更差，
+# 88 工具 +14608 字/请求添噪）；若要去噪把 toolDescriptionSeed 改 off 即可（一行）。
+- insert:
+    - id: dsh-we-need-plugin
+      name: 'dsh-we-need-plugin'
+      config:
+        intercept: true
+        mirror: false
+        mirrorToolSteps: false
+        toolStepAnchor: off
+        toolStepReasoning: anchor
+        toolStepReseed: true
+        postCompactionSeed: off
+        compactionRegister: we-need
+        mirrorScope: task
+        seedInjection: false
+        reorderContexts: true
+        sanitizeProgram: true
+        nearestGuidance: both
+        teamRegisterHint: true
+        toolDescriptionSeed: all
+        matchName: false
+        targetRules:
+          - [deepseek, flash]

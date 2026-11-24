@@ -1,15 +1,17 @@
 # DSH We Need Plugin
 
-> **4.1.0（TeamAgent 外发升级 / content 保留 / Kimi 决策型 seed）**：保留 live 4.0.1 的 content 保留修复和 882 seed；Team 外发要求扩展到 **teammate、sub-agent 和 workflow agent(prompt)**，覆盖工具从 7 个增加到 8 个（新增 `workflow`）。其余配置不变：完整 seed bundle + `nearestGuidance: both` + `teamRegisterHint: true` + `toolDescriptionSeed: off`。
->
-> **4.0.1 修复（保留在 4.1.0）**：带 `tool_calls` 的 assistant 消息默认保留 `content`（包括已有正文、tool-step 追加的 anchor/seed），不再在发 wire 前清空；只有显式配置 `stripToolCallContent: true` 才执行旧版清理。DSH 接受非空 `content`，这不是协议硬限制。
->
-> 当前 seed（882 字符 / 883 字节，SHA `901a2ed2…`；文件 SHA `94499d6f…`）：
+> **4.4.1（当前发布）**：在 4.3.2 基础上新增可选 `seedOrientation` 定向块（`off | example | full`，默认 `off`；关闭时与 4.3.2 字节一致）。`full` 的当前顺序为：
 >
 > ```text
-> We need respond to the current request; the request asks for concrete work. Should follow the request's language, role, and constraints, but no extra identity perhaps. Should consider evidence and honesty: should not claim unobserved facts; can respond naturally "Need inspect the actual inputs first." We should embody a concise, direct plan, no filler. User asks for work, respond perhaps "Need read the actual inputs first." Should avoid overdo "Need proceed" per context? The request says skip filler; but concrete action is appropriate. Could say "Need inspect the actual inputs first." This is enough. Should have no invented tools, no guessed memory. Must perhaps not describe "Need inspect" as done? It is okay as a plan. Desired response straightforward. Perhaps "Need inspect the actual inputs first." Good. No need repeat the task unless asked. Respond by doing the work.
+> todo → 上下文占用 → 标注 + raw seed → 上一步 reasoning → continue
 > ```
-
+>
+> 真实 task 紧贴 seed。4.4.1 的 todo 源为“宿主当前投影优先 + 历史最近 todo_write 兜底”；首轮缺 todo/usage/previous 时退化为 `标注 + seed + continue`，缺省节省略、不编造。
+>
+> 默认配置 `off` 不改变既有行为；`full` 是显式 opt-in。完整 A/B 尚未做，不声称已治愈所有漂移。
+>
+> **4.3.0–4.3.2 保留**：白名单任务入口（未知 kind 默认上下文）、contentFill 跨边界镜像历史空 content、历史 reasoning 通道跨边界归一为 `reasoning_content`。当前 seed 为 raw Kimi 921（文件内容见 `seed.txt`，精确原文见文末）；历史段落中的 882 seed 已过时。
+>
 > **推荐提示词（带高频规划词）**：写任务时可直接用 `Need / Should / Could / Must / Let's` 承担不同动作。简短事例：
 >
 > ```text
@@ -20,11 +22,9 @@
 
 > 下文 3.0.0 说明仍适用于 seed 注入底座；3.2.0 实验配置与 A/B/C/D 说明保留作历史对照。
 
-> **适用于 DeepSeek V4.1 Flash（DSH 插件 4.1.0）。**
+> **适用于 DeepSeek V4.1 Flash（DSH 插件 4.4.1）。**
 >
-> 稳定的 We Need 思维链，极大提升 DeepSeek V4.1 Flash 的能力；仿 Kimi K3.1 Pro 的决策型 seed 把任务复述、约束、候选 A/B、风险检查、选定与收尾带到当前 task 紧前，减少无效思维，提升计划与执行质量。
-
-> **4.1.0**：当前发布版。已核实支持：**标准模式**、**goal 模式**（goal-only 会话也注入 seed）、**Team Agent 会话**（team/agent/subagent 消息按上下文处理，seed 仍注入真实任务）、**Response API**（openai-responses 签名保留，完整 live 验证待补）；其他模式未验证。Team 外发语态规则：`Need / Should / Could / Can / Must / May` + `We need / We should / We can / Let's` 自然分布，允许普通陈述句与直接祈使句，长消息至少两个不同情态开头。**4.1.0 TeamAgent 升级**：`TEAM_REGISTER_HINT` 明确覆盖 teammate / sub-agent / workflow agent(prompt)，`TEAM_HINT_TOOLS` 增加 `workflow`（共 8 个）。默认保留 tool-call assistant 的 content；旧的 `stripToolCallAssistantContent()` 只在 `stripToolCallContent: true` 时执行。模型匹配默认要求 `DeepSeek` 与 `Flash` 两个词（大小写不敏感）；seed 按 `seed.txt` 实际内容注入。下文旧版 `728/728`、`taskPolicy`、`registerGate`、`mirrorToolSteps` 等只作历史说明，不再代表 4.1.0 默认行为。
+> 稳定的 We Need 思维链，极大提升 DeepSeek V4.1 Flash 的能力；仿 Kimi K3.1 Pro 的决策型 seed 把任务复述、约束、候选 A/B、风险检查、选定与收尾带到当前 task 紧前，减少无效思维，提升计划与执行质量。已核实支持 **标准模式**、**goal 模式**、**Team Agent 会话**、**Response API**（完整 live 验证待补）；其他模式未验证。Team 外发语态规则：`Need / Should / Could / Can / Must / May` + `We need / We should / We can / Let's` 自然分布。默认保留 tool-call assistant 的 content；模型匹配默认要求 `DeepSeek` 与 `Flash` 两个词（大小写不敏感）；seed 按 `seed.txt` 实际内容注入。下文旧版 `728/728`、`taskPolicy`、`registerGate`、`mirrorToolSteps` 等只作历史说明，不再代表 4.4.1 默认行为。
 
 DeepSeek Harness（DSH）Host 插件：不改 tools、不改采样参数，只在每次模型生成前，把 **计划与上一轮思考结果** 放到离模型最近的位置；让 DeepSeek V4.1 Flash 的思维链一路顺承，稳定保持 `We need / Let's / We / Should`。
 

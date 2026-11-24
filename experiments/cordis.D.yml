@@ -1,0 +1,25 @@
+# Variant D = full 3.0 (config C) + persistent tool-description guidance.
+# Tests whether cumulative program-text corrective force (toolDescriptionSeed:all)
+# stabilizes the collective register vs config C (ephemeral latest-turn append).
+- insert:
+    - id: dsh-we-need-plugin
+      name: 'dsh-we-need-plugin'
+      config:
+        intercept: true
+        mirror: false
+        mirrorToolSteps: false
+        toolStepAnchor: off
+        toolStepReasoning: anchor-seed
+        toolStepReseed: true
+        postCompactionSeed: reasoning
+        compactionRegister: we-need
+        mirrorScope: task
+        seedInjection: true
+        reorderContexts: true
+        sanitizeProgram: true
+        nearestGuidance: both
+        teamRegisterHint: true
+        toolDescriptionSeed: all
+        matchName: false
+        targetRules:
+          - [deepseek, flash]

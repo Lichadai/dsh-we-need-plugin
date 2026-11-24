@@ -40,6 +40,23 @@ const NEAREST_GUIDANCE = "Need continue from the latest result and keep the whol
 // reasoning mirrored into content. Never overwrites existing visible speech;
 // replayState-aligned; idempotent via the empty-content guard.
 const CONTINUE_WORK = "Need continue the main work from the actual task. Should treat the trace above as a reasoning template, not as the task itself. Need choose the next concrete action and proceed.";
+// Orientation lever (config.seedOrientation: off | example | full, default off).
+// Labels the seed as a reasoning-style EXAMPLE via colon + newline (no quotes, so
+// the trace stays a bare first-person thought the model can imitate, not a quoted
+// external artifact), and in full mode appends the actual previous thinking, the
+// current todo list, and provider-measured context occupancy. Only the visible
+// content text block changes; the reasoning channel keeps the raw SEED so isSeed,
+// hasSeedAfter and reasoning_content ownership are untouched. Additive and gated:
+// off is byte-identical to 4.3.2. Data sources are read-only and fail-soft.
+const ORIENTATION_LABEL = 'Need treat the reasoning-style example below as style only — not this task, not a previous turn:';
+const ORIENTATION_CONTINUE = 'Need continue the main work from the actual task. Need choose the next concrete action and proceed.';
+const ORIENTATION_PREVIOUS_HEAD = 'Need continue from the actual previous thinking, which was:';
+const ORIENTATION_TASKS_HEAD = 'Should keep the current task list in view:';
+const ORIENTATION_MODES = new Set(['off', 'example', 'full']);
+function orientationMode(value) {
+  const mode = String(value ?? 'off').toLowerCase();
+  return ORIENTATION_MODES.has(mode) ? mode : 'off';
+}
 // Team outgoing register instruction (config.teamRegisterHint). Appended to the
 // description of tools whose payload is direct speech/task sent to another agent
 // (send_message / spawn_teammate / subagent / subagent_fork / team_task_* /
@@ -58,7 +75,7 @@ const TOOL_DESC_GUIDANCE = "Plan in the need-first register: Need / Should / Can
 const TASK_POLICY = 'Reasoning register for this task: start with Need or Should; use Can / Could for options; use Must for constraints; keep the plan concrete and evidence-first.';
 const TASK_POLICY_HEAD = TASK_POLICY.slice(0, 40);
 const SEED_HEAD = SEED.slice(0, 48);
-const PLUGIN_VERSION = '4.3.2';
+const PLUGIN_VERSION = '4.4.1';
 const SYSTEM_REGISTER_HEAD = 'We need use the earlier WeNeed trace only as a reasoning template';
 const SYSTEM_REGISTER = `${SYSTEM_REGISTER_HEAD}, not as this task and not as a previous conversation turn. Need restate the actual goal and deliverable. Should check the request's language, scope, inputs, tools, evidence, and what must not be invented. Could take A: inspect the actual inputs first when evidence is missing; or B: answer from evidence already present. Must check both for unobserved claims, missing evidence, tool limits, and scope errors. Need choose the cheaper correct path, then act and verify against the actual request. Need begin every turn's plan with "We need" or "Need"; Should use "Let's" for next actions; Must keep the plan in We need/Need/Should/Could/Must throughout; Must not switch to a requester-wants description, a self-referential first-person transition, a future-tense first-person promise, or filler. Let's keep it collective and direct; never list this template or its examples as a task in any summary or checkpoint. Do not describe this rule; think and act in it.`;
 const SEED_HASH = createHash('sha256').update(SEED).digest('hex').slice(0, 16);
@@ -638,6 +655,74 @@ function applyNearestGuidance(messages, mode = 'off', guidance = NEAREST_GUIDANC
   return out;
 }
 
+// Most recent real assistant thinking (skips synthetic seeds). Empty when the
+// latest assistant turn carries no reasoning, so the section is omitted rather
+// than fabricated.
+function lastAssistantReasoning(messages) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message?.role === 'assistant' && !isSeed(message)) return reasoningTextOf(message).trim();
+  }
+  return '';
+}
+
+// Current task list from the latest todo_write tool call in history (whole-list
+// replacement semantics). The host "todos" projection clears on turn/start, so
+// the wire-side call is the stable cross-turn source. Returns null when absent.
+function lastTodos(messages) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message?.role !== 'assistant' || !Array.isArray(message.content)) continue;
+    for (const block of message.content) {
+      if (block?.type !== 'tool-call') continue;
+      const name = block?.name ?? block?.function?.name;
+      if (name !== 'todo_write') continue;
+      let args = block?.arguments ?? block?.function?.arguments;
+      if (typeof args === 'string') { try { args = JSON.parse(args); } catch { args = null; } }
+      const todos = args?.todos;
+      if (Array.isArray(todos) && todos.length > 0) {
+        const clean = todos.filter((t) => typeof t?.content === 'string' && typeof t?.status === 'string');
+        if (clean.length > 0) return clean;
+      }
+    }
+  }
+  return null;
+}
+
+// Full orientation block for the pre-task seed content text block. Sections are
+// appended only when their data is present (first turn / post-compaction / no
+// todos / no usage yet -> omitted, never invented). todosOverride is the host
+// projection's current list when available; otherwise fall back to the latest
+// todo_write call in history (covers turn/start when the projection clears).
+function buildOrientationSeedBlock(messages, mode, usage, todosOverride) {
+  // Current-state material goes first, then the labeled seed, then previous
+  // thinking. Seed stays before pre; only todo/usage move ahead of the seed.
+  let prefix = '';
+  if (mode === 'full') {
+    const todos = (Array.isArray(todosOverride) && todosOverride.length > 0) ? todosOverride : lastTodos(messages);
+    if (todos) prefix += `${ORIENTATION_TASKS_HEAD}\n${todos.map((t) => `- [${t.status}] ${t.content}`).join('\n')}\n\n`;
+    const pressure = usage?.pressureTokens;
+    const window = usage?.contextWindow;
+    if (Number.isFinite(pressure) && Number.isFinite(window) && window > 0) {
+      prefix += `Need keep context budget in view: previous request input ≈ ${Math.round(pressure)} tokens of ${Math.round(window)} window (provider-measured).\n\n`;
+    }
+  }
+  let block = `${prefix}${ORIENTATION_LABEL}\n${SEED}`;
+  if (mode === 'full') {
+    const previous = lastAssistantReasoning(messages);
+    if (previous) block += `\n\n${ORIENTATION_PREVIOUS_HEAD}\n${previous}`;
+  }
+  block += `\n\n${ORIENTATION_CONTINUE}`;
+  return block;
+}
+
+// Head used by contentFill for the latest tool turn when orientation is on; the
+// turn's own reasoning is appended after it (as in the off path), so the example
+// label replaces the bare seed+continue-work without duplicating reasoning.
+function orientationFillHead() {
+  return `${ORIENTATION_LABEL}\n${SEED}\n\n${ORIENTATION_CONTINUE}`;
+}
+
 // General content-fill (config.contentFill = 'seed-continue-reasoning'). Fills
 // EMPTY assistant content so the visible history keeps the WeNeed voice on
 // user-task, interrupt/resume, and tool-step requests alike. The latest
@@ -647,8 +732,9 @@ function applyNearestGuidance(messages, mode = 'off', guidance = NEAREST_GUIDANC
 // its own reasoning mirrored into content. Existing visible speech is never
 // overwritten; replayState stays aligned via insertAssistantBlocks; the
 // empty-content guard makes it idempotent.
-function fillAssistantContent(messages, mode = 'off', scopeStart = 0) {
+function fillAssistantContent(messages, mode = 'off', scopeStart = 0, orientMode = 'off') {
   if (String(mode ?? 'off').toLowerCase() !== 'seed-continue-reasoning' || !Array.isArray(messages)) return messages;
+  const orientation = orientationMode(orientMode);
   // The seed+continue anchor targets the latest tool-call turn WITHIN the current
   // task scope (index >= scopeStart). The reasoning-mirror branch deliberately
   // crosses the task boundary: EVERY empty assistant content turn — including
@@ -669,7 +755,8 @@ function fillAssistantContent(messages, mode = 'off', scopeStart = 0) {
     const reasoning = reasoningTextOf(message).trim();
     let fill;
     if (index === latest) {
-      fill = reasoning ? `${SEED}\n\n${CONTINUE_WORK}\n\n${reasoning}` : `${SEED}\n\n${CONTINUE_WORK}`;
+      const head = orientation === 'off' ? `${SEED}\n\n${CONTINUE_WORK}` : orientationFillHead();
+      fill = reasoning ? `${head}\n\n${reasoning}` : head;
     } else {
       if (!reasoning) return message;
       fill = reasoning;
@@ -1087,12 +1174,12 @@ function filterSkillCatalog(messages) {
   return changed ? next : messages;
 }
 
-function seedMessage(provider, model) {
+function seedMessage(provider, model, contentText = SEED) {
   return {
     id: `weneed-seed-${randomUUID()}`,
     role: 'assistant',
     content: [
-      { type: 'text', text: SEED },
+      { type: 'text', text: contentText },
       { type: 'reasoning', text: SEED },
     ],
     source: {
@@ -1123,6 +1210,10 @@ function injectSeed(messages, options, modelConfig, targetRules = DEFAULT_TARGET
   const seedEnabled = flags.seedEnabled !== false;
   const reorderEnabled = flags.reorderEnabled !== false;
   const cleaned = messages.filter((message) => !isSeed(message));
+  const orientMode = orientationMode(flags.orientation?.mode);
+  const orientUsage = flags.orientation?.usage;
+  const orientTodos = flags.orientation?.todos;
+  const seedContentFor = (msgs) => (orientMode === 'off' ? SEED : buildOrientationSeedBlock(msgs, orientMode, orientUsage, orientTodos));
   // purpose:'compaction' is the authoritative host signal; text sniff is fallback.
   if (options.purpose === 'compaction' || isCompactionRequest(cleaned)) {
     return {
@@ -1148,7 +1239,7 @@ function injectSeed(messages, options, modelConfig, targetRules = DEFAULT_TARGET
           messages: [
             ...ordered.slice(0, toolTaskIndex),
             ...contexts,
-            seedMessage(options.provider, options.model),
+            seedMessage(options.provider, options.model, seedContentFor(ordered)),
             task,
             ...rest,
           ],
@@ -1175,7 +1266,7 @@ function injectSeed(messages, options, modelConfig, targetRules = DEFAULT_TARGET
   const after = cleaned.slice(taskIndex + 1);
   const contexts = reorderEnabled ? after.filter(isContextUser) : [];
   const rest = reorderEnabled ? after.filter((message) => !isContextUser(message)) : after;
-  const seedBlocks = seedEnabled ? [seedMessage(options.provider, options.model)] : [];
+  const seedBlocks = seedEnabled ? [seedMessage(options.provider, options.model, seedContentFor(cleaned))] : [];
   return {
     messages: [
       ...cleaned.slice(0, taskIndex),
@@ -1331,7 +1422,7 @@ class WeNeedNativeAdapter {
   async *stream(options) {
     const modelConfig = this.configFor(options.provider, options.model) ?? {};
     const filtered = filterSkillCatalog(options.messages ?? []);
-    const { messages, reason } = injectSeed(filtered, options, modelConfig, this.config.targetRules, this.config.matchName === true, this.config.compactionRegister, this.config.toolStepReseed === true, { seedEnabled: this.config.seedInjection !== false, reorderEnabled: this.config.reorderContexts !== false });
+    const { messages, reason } = injectSeed(filtered, options, modelConfig, this.config.targetRules, this.config.matchName === true, this.config.compactionRegister, this.config.toolStepReseed === true, { seedEnabled: this.config.seedInjection !== false, reorderEnabled: this.config.reorderContexts !== false, orientation: { mode: orientationMode(this.config.seedOrientation), usage: undefined } });
     const policyEligible = reason === 'user-task'
       || (reason === 'tool-step'
         && lastCompactionIndex(messages) < lastRealUserIndex(messages));
@@ -1361,7 +1452,7 @@ class WeNeedNativeAdapter {
     const contentSafe = stripToolCallContent ? stripToolCallAssistantContent(anchored) : anchored;
     const sanitizeEnabled = this.config.sanitizeProgram !== false;
     const sanitizedMessages = sanitizeEnabled ? sanitizeProgramMessages(contentSafe) : contentSafe;
-    const contentFilledMessages = fillAssistantContent(sanitizedMessages, this.config.contentFill, scopeStart);
+    const contentFilledMessages = fillAssistantContent(sanitizedMessages, this.config.contentFill, scopeStart, orientationMode(this.config.seedOrientation));
     const guidedMessages = applyNearestGuidance(contentFilledMessages, this.config.nearestGuidance, NEAREST_GUIDANCE, scopeStart);
     const seededToolMessages = appendToolResultSeed(guidedMessages, this.config.toolResultSeed, SEED, scopeStart);
     const registeredMessages = appendSystemRegister(
@@ -1531,7 +1622,7 @@ class WeNeedNativeAdapter {
 
 export const name = 'dsh-we-need-plugin';
 export const inject = ['llm'];
-export { injectSeed, isCompactionRequest, isTarget, DEFAULT_TARGET_RULES, WeNeedNativeAdapter, mirrorMessages, mirrorAssistantMessage, wireMessage, stripToolCallAssistantContent, anchorEmptyToolPlan, anchorAfterCompaction, shouldAnchorAfterCompaction, hasSeedAfter, reasoningTextOf, normalizeReasoningChannelMessages, appendToolStepReasoning, appendTaskPolicy, orderContextsBeforeTask, sanitizeProgramText, sanitizeProgramMessages, sanitizeToolDefinition, sanitizeToolDefinitions, TASK_POLICY, TOOL_STEP_ANCHOR, taskScopeStart, lastCompactionIndex, applyNearestGuidance, fillAssistantContent, appendTeamRegisterHint, appendToolResultSeed, appendToolDescriptionSeed, appendSystemRegister, NEAREST_GUIDANCE, CONTINUE_WORK, TEAM_REGISTER_HINT, TOOL_DESC_GUIDANCE, SYSTEM_REGISTER, SYSTEM_REGISTER_HEAD, COMPACTION_REGISTER, COMPACTION_REGISTER_HEAD, SEED };
+export { injectSeed, isCompactionRequest, isTarget, DEFAULT_TARGET_RULES, WeNeedNativeAdapter, mirrorMessages, mirrorAssistantMessage, wireMessage, stripToolCallAssistantContent, anchorEmptyToolPlan, anchorAfterCompaction, shouldAnchorAfterCompaction, hasSeedAfter, reasoningTextOf, normalizeReasoningChannelMessages, appendToolStepReasoning, appendTaskPolicy, orderContextsBeforeTask, sanitizeProgramText, sanitizeProgramMessages, sanitizeToolDefinition, sanitizeToolDefinitions, TASK_POLICY, TOOL_STEP_ANCHOR, taskScopeStart, lastCompactionIndex, applyNearestGuidance, fillAssistantContent, appendTeamRegisterHint, appendToolResultSeed, appendToolDescriptionSeed, appendSystemRegister, NEAREST_GUIDANCE, CONTINUE_WORK, TEAM_REGISTER_HINT, TOOL_DESC_GUIDANCE, SYSTEM_REGISTER, SYSTEM_REGISTER_HEAD, COMPACTION_REGISTER, COMPACTION_REGISTER_HEAD, SEED, buildOrientationSeedBlock, orientationFillHead, lastTodos, lastAssistantReasoning, orientationMode, ORIENTATION_LABEL, ORIENTATION_CONTINUE, ORIENTATION_PREVIOUS_HEAD, ORIENTATION_TASKS_HEAD };
 
 export function apply(ctx, config = {}) {
   if (config.debugTap === true) { try { installDebugTap(); } catch {} }
@@ -1576,12 +1667,41 @@ export function apply(ctx, config = {}) {
       }
       const filtered = filterSkillCatalog(options.messages ?? []);
       const filterChanged = filtered !== (options.messages ?? []);
-      const injected = injectSeed(filtered, options, {}, config.targetRules, config.matchName === true, config.compactionRegister, config.toolStepReseed === true, { seedEnabled: config.seedInjection !== false, reorderEnabled: config.reorderContexts !== false });
+      const orientMode = orientationMode(config.seedOrientation);
+      let orientUsage;
+      let orientTodos;
+      let orientTodosSource;
+      if (orientMode === 'full') {
+        try {
+          const agents = ctx.get?.('agents') ?? ctx.agents;
+          const session = options.sessionId !== undefined ? agents?.get?.(options.sessionId)?.session : undefined;
+          if (session) {
+            const meter = ctx.get?.('tokenMeter') ?? ctx.tokenMeter;
+            if (typeof meter?.contextPressure === 'function') orientUsage = meter.contextPressure(session);
+            // Prefer the host's current todos projection (last-write-wins fold of
+            // todo/write; populated mid-turn and survives compaction). stateOf is
+            // deprecated but warns once per key and fails soft; the alternative
+            // (registering a same-key handle) couples us to tool-todo's stateVersion
+            // and breaks on DSH upgrade. At turn/start the projection clears to null,
+            // so buildOrientationSeedBlock falls back to the latest todo_write in history.
+            const proj = ctx.get?.('sessionProjections') ?? ctx.sessionProjections;
+            if (typeof proj?.stateOf === 'function') {
+              const state = proj.stateOf(session, 'todos');
+              if (Array.isArray(state) && state.length > 0) {
+                const clean = state.filter((t) => typeof t?.content === 'string' && typeof t?.status === 'string');
+                if (clean.length > 0) { orientTodos = clean; orientTodosSource = 'projection'; }
+              }
+            }
+          }
+        } catch { orientUsage = undefined; orientTodos = undefined; }
+      }
+      const injected = injectSeed(filtered, options, {}, config.targetRules, config.matchName === true, config.compactionRegister, config.toolStepReseed === true, { seedEnabled: config.seedInjection !== false, reorderEnabled: config.reorderContexts !== false, orientation: { mode: orientMode, usage: orientUsage, todos: orientTodos } });
       auditRecord({
         provider: options.provider, model: options.model, purpose: options.purpose,
         reason: injected.reason, injected: injected.injected === true,
         taskIndex: injected.taskIndex ?? null, seedHash: SEED_HASH,
         taskHash: taskHashOf(injected.messages), messageCount: injected.messages.length,
+        ...(orientMode === 'off' ? {} : { orientation: orientMode, orientationUsage: orientUsage?.pressureTokens !== undefined, orientationTodos: orientTodosSource === 'projection' || lastTodos(injected.messages) !== null, orientationTodosSource: orientTodosSource ?? (lastTodos(injected.messages) !== null ? 'history' : 'none') }),
       });
       if (injected.reason === 'compaction-request' && injected.messages !== filtered) {
         if (typeof ctx.llm?.prepareCall !== 'function') {
@@ -1647,7 +1767,7 @@ export function apply(ctx, config = {}) {
       const sanitizeEnabled = config.sanitizeProgram !== false;
       const sanitizedMessages = sanitizeEnabled ? sanitizeProgramMessages(contentSafeMessages) : contentSafeMessages;
       const sanitizedTools = sanitizeEnabled ? sanitizeToolDefinitions(options.tools) : options.tools;
-      const contentFilledMessages = fillAssistantContent(sanitizedMessages, config.contentFill, scopeStart);
+      const contentFilledMessages = fillAssistantContent(sanitizedMessages, config.contentFill, scopeStart, orientMode);
       const guidedMessages = applyNearestGuidance(contentFilledMessages, config.nearestGuidance, NEAREST_GUIDANCE, scopeStart);
       const seededToolMessages = appendToolResultSeed(guidedMessages, config.toolResultSeed, SEED, scopeStart);
       const registeredMessages = appendSystemRegister(

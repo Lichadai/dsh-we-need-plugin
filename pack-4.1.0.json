@@ -1,0 +1,76 @@
+[
+  {
+    "id": "dsh-we-need-plugin@4.1.0",
+    "name": "dsh-we-need-plugin",
+    "version": "4.1.0",
+    "size": 50344,
+    "unpackedSize": 155346,
+    "shasum": "369eb7a0807b78acf068207fc5e350b5466add1f",
+    "integrity": "sha512-zsiFvIn3WaIELXX/355KF0shczv3/i98sMBpo1A1uLlzZstil6oB4r+y+8f51t0Eofn0Ab7oqtSPOxZKPBGn1w==",
+    "filename": "dsh-we-need-plugin-4.1.0.tgz",
+    "files": [
+      {
+        "path": "CHANGELOG.md",
+        "size": 22811,
+        "mode": 420
+      },
+      {
+        "path": "LICENSE",
+        "size": 1088,
+        "mode": 420
+      },
+      {
+        "path": "README.md",
+        "size": 49278,
+        "mode": 420
+      },
+      {
+        "path": "SECURITY.md",
+        "size": 978,
+        "mode": 420
+      },
+      {
+        "path": "cordis.patch.yml",
+        "size": 708,
+        "mode": 420
+      },
+      {
+        "path": "debug-tap.mjs",
+        "size": 6281,
+        "mode": 420
+      },
+      {
+        "path": "icon.svg",
+        "size": 717,
+        "mode": 420
+      },
+      {
+        "path": "index.js",
+        "size": 69830,
+        "mode": 420
+      },
+      {
+        "path": "locale/en.json",
+        "size": 551,
+        "mode": 420
+      },
+      {
+        "path": "locale/zh.json",
+        "size": 524,
+        "mode": 420
+      },
+      {
+        "path": "package.json",
+        "size": 1697,
+        "mode": 420
+      },
+      {
+        "path": "seed.txt",
+        "size": 883,
+        "mode": 420
+      }
+    ],
+    "entryCount": 12,
+    "bundled": []
+  }
+]

@@ -1,5 +1,22 @@
 # Changelog
 
+## 4.4.1
+
+- **full 模式顺序改为当前状态优先**：`todo → 上下文占用 → 标注 + raw seed → 上一步 reasoning → continue`，真实 task 紧贴 seed。首轮缺 todo/usage/previous 时仍退化为 `label + seed + continue`，缺省节省略、不编造。live PTC 同 prompt 对照（2 次旧顺序 + 2 次新顺序）：新顺序 12/12 请求合格，旧工具步 0/11 合格；仅单任务小样本，不写因果。
+- **todo 清单改"投影优先 + 历史兜底"**：full 模式优先读宿主当前 `todos` 投影（`ctx.sessionProjections.stateOf(session,'todos')`，todo/write 事件 last-write-wins 折叠，工具步期间 populated、抗压缩），轮次开头 turn/start 投影清空时退回历史最近 `todo_write` 调用。审计加 `orientationTodosSource: projection|history|none`。
+- 读法权衡：stateOf 虽标 deprecated 但每 key 仅 warn 一次、未注册返回 undefined（fail-soft）；另一条 register 同 key handle 的路会耦合 tool-todo 的 stateVersion，DSH 升级即加载失败，故读-only 场景选 stateOf 更稳。
+- 承重机制不变；off 仍与 4.3.2 字节一致。测试 orientation.test.mjs 加用例 14（投影优先/空投影兜底/无投影兜底）；12/12 全绿。
+
+## 4.4.0
+
+- **新增可选 `seedOrientation` 定向块（off | example | full，默认 off；关闭时与 4.3.2 字节一致）**：把 seed 的可见 content 标注为"思维示例"——冒号+换行引出 raw 原文，**不打引号**（裸第一人称思维与 reasoning 通道同形，便于模仿，避免引号把 trace 外部材料化）。`example` 仅标注+示例+继续句；`full` 再附三件定向信息：上一步 reasoning（`lastAssistantReasoning`，逐字复制）、当前 todo 清单（`lastTodos`，从历史最近 `todo_write` 调用取，整表替换语义）、provider 实测上下文占用（宿主全局 `tokenMeter.contextPressure(session)`，经 `options.sessionId` → `ctx.agents.get(sessionId).session`）。
+- **承重机制不动**：reasoning 通道保持 raw SEED → `isSeed` 精确匹配、`hasSeedAfter`/SEED_HEAD、`reasoning_content` 通道归属（4.3.2）全部照旧；白名单任务锚、`orderContextsBeforeTask`、contentFill 空 content 幂等守卫、sanitize 范围均不变。定向块只改 assistant 可见 content text 块。
+- **数据缺省诚实省略**：首轮无上一步、压缩后历史丢失、无 todo 历史、首个请求前无 usage → 对应节省略，不编造、不拿估算冒充实测。宿主服务取不到 → fail-soft 降级（照 audit best-effort 模式），绝不阻断注入。多窗口安全（tokenMeter 按 session 隔离）。
+- contentFill 最新工具回合在 orientation 开启时用 `orientationFillHead()`（标注+示例+继续句）替换 bare seed+continue-work，回合自身 reasoning 仍按原样追加（不重复复制）。
+- 研究依据：`RESEARCH-SEED-ORIENTATION-20261124.md`（四要素数据源亲证 + 冒号vs引号采纳分析 + A/B 计划）。**采纳净效应待 live A/B，默认 off 不改变现有行为。**
+- 测试：新增 `tests/orientation.test.mjs`（off 字节不变 / example / full 形状 / 缺省省略 / isSeed 剥离 / contentFill / 幂等 / todo 提取 / 禁词）。
+- 版本升到 4.4.0；package 描述同步；cordis.patch.yml 显式 `seedOrientation: off`。
+
 ## 4.3.2
 
 - **reasoning_content 通道归一跨任务边界（中断续作"重新推导"级联的根因修复）**：`normalizeReasoningChannelMessages` 去掉 `index < scopeStart` 跳过，**所有 assistant 回合（含边界前历史）的 reasoning 签名都归一成 `reasoning_content`**。
