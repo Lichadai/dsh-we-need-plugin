@@ -38,8 +38,8 @@ continue
 
 ## 默认值
 
-- 发布包默认 `seedOrientation: off`，不改变既有安装行为；
-- `full` 是显式 opt-in；
+- 发布 bundle 默认 `seedOrientation: full`，安装后直接启用当前状态优先顺序；
+- 需要旧行为时可显式设 `off`；
 - 发布包和发布树不含 `wireDump`，不包含 live 取证配置；
 - 12 个 npm 打包文件，tests / CI / bin 只进仓库树，不进 tgz。
 
@@ -64,14 +64,14 @@ continue
 - Let me：旧顺序 0 和 1（1.59/10k），新顺序 0 和 0。
 - 新顺序两跑的首次 reasoning 直接点名测试路径，旧顺序两跑没有。
 
-**边界**：只有 2+2 个单任务样本，不能据此宣布因果或广泛稳定性；完整 A/B（example/full、长任务、真实压缩、中断续作）尚未做。live 实验时另开了 `full`，发布包默认仍是 `off`。
+**边界**：只有 2+2 个单任务样本，不能据此宣布因果或广泛稳定性；完整 A/B（example/full、长任务、真实压缩、中断续作）尚未做。发布 bundle 与 live 验证配置一致，默认 `full`。
 
 ## 产物指纹
 
 - `index.js`：87624 B，SHA-256 `e940530ee1c0b03d0e6db9b08910826578602454588966d6dd47ce9eba2c626e`
-- `dsh-we-need-plugin-4.4.1.tgz`：60219 B，12 文件
-  - SHA-256：`e9fd679cab92a7cc6daad2525de2d271f35065a442f8fc7fa1b66deb9e9acba6`
-  - integrity：`sha512-bw7QAJD0kzMGjcpyPs6oB8ixgbFtbcpDgtP5ystE7jbThqwC/XNq5honCgReG3mSQv/FRr8i5ZfgWSQVpGTkOQ==`
+- `dsh-we-need-plugin-4.4.1.tgz`：60259 B，12 文件
+  - SHA-256：`5c486dcb7f811b098389ed70efc102e558f765d0a2dea2eccb20f22909338f82`
+  - integrity：`sha512-Trc5cO0GMtG93HcXO2TH04csbrcDSzHbQpEfpDGM3A3bQJuLpAcLjjSvAHNHInEzjg2EBXEplTLUbE4+V2ymoA==`
 - 两次本地 `npm pack` 字节一致；测试 **12/12 套件全绿**。
 
 ## 安装
@@ -80,7 +80,7 @@ continue
 
 ## 已知限制
 
-- 本版发布的是门控能力，默认 `off`；需要定向块时自行设 `seedOrientation: full`。
+- 本版默认 `full`；如需回到 4.3.2 行为，可显式设 `seedOrientation: off`。
 - 小样本 live 对照只覆盖一个最小任务与一个 provider 路由。
 - 未做长任务、真实压缩、中断续作、Team/Image 场景的本版专项回归。
 - `full` 的 todo/usage 依赖宿主服务；取不到时按设计省略对应节，不会阻断注入。

@@ -3,6 +3,7 @@
 ## 4.4.1
 
 - **full 模式顺序改为当前状态优先**：`todo → 上下文占用 → 标注 + raw seed → 上一步 reasoning → continue`，真实 task 紧贴 seed。首轮缺 todo/usage/previous 时仍退化为 `label + seed + continue`，缺省节省略、不编造。live PTC 同 prompt 对照（2 次旧顺序 + 2 次新顺序）：新顺序 12/12 请求合格，旧工具步 0/11 合格；仅单任务小样本，不写因果。
+- **发布 bundle 默认 `seedOrientation: full`**：4.4.1 安装后直接使用上述顺序；显式设 `off` 可回到 4.3.2 行为。
 - **todo 清单改"投影优先 + 历史兜底"**：full 模式优先读宿主当前 `todos` 投影（`ctx.sessionProjections.stateOf(session,'todos')`，todo/write 事件 last-write-wins 折叠，工具步期间 populated、抗压缩），轮次开头 turn/start 投影清空时退回历史最近 `todo_write` 调用。审计加 `orientationTodosSource: projection|history|none`。
 - 读法权衡：stateOf 虽标 deprecated 但每 key 仅 warn 一次、未注册返回 undefined（fail-soft）；另一条 register 同 key handle 的路会耦合 tool-todo 的 stateVersion，DSH 升级即加载失败，故读-only 场景选 stateOf 更稳。
 - 承重机制不变；off 仍与 4.3.2 字节一致。测试 orientation.test.mjs 加用例 14（投影优先/空投影兜底/无投影兜底）；12/12 全绿。

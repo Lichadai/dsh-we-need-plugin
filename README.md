@@ -1,6 +1,6 @@
 # DSH We Need Plugin
 
-> **4.4.1（当前发布）**：在 4.3.2 基础上新增可选 `seedOrientation` 定向块（`off | example | full`，默认 `off`；关闭时与 4.3.2 字节一致）。`full` 的当前顺序为：
+> **4.4.1（当前发布）**：在 4.3.2 基础上新增 `seedOrientation` 定向块（`off | example | full`，发布 bundle 默认 `full`；设 `off` 可回到 4.3.2 行为）。`full` 的当前顺序为：
 >
 > ```text
 > todo → 上下文占用 → 标注 + raw seed → 上一步 reasoning → continue
@@ -8,7 +8,7 @@
 >
 > 真实 task 紧贴 seed。4.4.1 的 todo 源为“宿主当前投影优先 + 历史最近 todo_write 兜底”；首轮缺 todo/usage/previous 时退化为 `标注 + seed + continue`，缺省节省略、不编造。
 >
-> 默认配置 `off` 不改变既有行为；`full` 是显式 opt-in。完整 A/B 尚未做，不声称已治愈所有漂移。
+> 发布 bundle 默认 `full`，安装后直接启用当前状态优先顺序；可显式设 `off` 回到 4.3.2 行为。完整 A/B 尚未做，不声称已治愈所有漂移。
 >
 > **4.3.0–4.3.2 保留**：白名单任务入口（未知 kind 默认上下文）、contentFill 跨边界镜像历史空 content、历史 reasoning 通道跨边界归一为 `reasoning_content`。当前 seed 为 raw Kimi 921（文件内容见 `seed.txt`，精确原文见文末）；历史段落中的 882 seed 已过时。
 >
