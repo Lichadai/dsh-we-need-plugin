@@ -25,19 +25,19 @@ npm pack
 产物（`files` 字段只含运行文件，tests/.github/bin 不进 tgz）：
 
 ```text
-dsh-we-need-plugin-4.4.1.tgz
+dsh-we-need-plugin-4.4.4.tgz
 ```
 
 `npm pack` 字节可复现：同内容 + 同 package.json 产出同一 tgz（CI 与本地一致）。
 
 ## 上传（GitHub Git Data API 整树替换）
 
-本项目用 Git Data API 整树替换上传：blob → tree → commit（parent=main）→ force-update main，**旧文件自动清除**（等价于"清空云端再粘贴新版"，原子且保留历史）。随后 release create/upload tgz。发布脚本见 `tmp/publish-4.4.1.mjs`（按版本复制改 `VERSION` / `REPO_DIR` / `TARBALL` / `NOTES`）。
+本项目用 Git Data API 整树替换上传：blob → tree → commit（parent=main）→ force-update main，**旧文件自动清除**（等价于"清空云端再粘贴新版"，原子且保留历史）。随后 release create/upload tgz。发布脚本见 `tmp/publish-4.4.4.mjs`（按版本复制改 `VERSION` / `REPO_DIR` / `TARBALL` / `NOTES`）。
 
 staging 必须是**完整 repo**：运行文件 + `tests/`（CI `npm test` 需要）+ 脚手架（`.github/workflows/release.yml`、`bin/`、`.gitattributes`、`.gitignore`、`PUBLISHING.md`、`RELEASE-NOTES.md`）。live 安装目录只有运行文件，缺 tests/脚手架，不能直接当 staging。
 
 ```sh
-node tmp/publish-4.4.1.mjs
+node tmp/publish-4.4.4.mjs
 ```
 
 若改用 git push：
@@ -47,7 +47,7 @@ git init
 git config user.name "DSH We Need Plugin"
 git config user.email "<id>+<login>@users.noreply.github.com"
 git add .
-git commit -m "release: dsh-we-need-plugin 4.4.1"
+git commit -m "release: dsh-we-need-plugin 4.4.4"
 gh repo create Lichadai/dsh-we-need-plugin --public --source=. --remote=origin --push
 ```
 
@@ -56,9 +56,9 @@ gh repo create Lichadai/dsh-we-need-plugin --public --source=. --remote=origin -
 ## 创建 Release
 
 ```sh
-git tag v4.4.1
-git push origin v4.4.1
-gh release create v4.4.1 ./dsh-we-need-plugin-4.4.1.tgz --notes-file RELEASE-NOTES.md --latest
+git tag v4.4.4
+git push origin v4.4.4
+gh release create v4.4.4 ./dsh-we-need-plugin-4.4.4.tgz --notes-file RELEASE-NOTES.md --latest
 ```
 
 GitHub Actions（`.github/workflows/release.yml`）也会在 tag push 时 `npm test` + `npm run test:package` + `npm pack` 字节复现 tgz 并 create/upload release；手动命令与 CI 产物一致。

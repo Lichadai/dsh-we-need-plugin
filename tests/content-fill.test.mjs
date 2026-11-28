@@ -3,6 +3,7 @@ import {
   fillAssistantContent, CONTINUE_WORK, SEED,
   COMPACTION_REGISTER, COMPACTION_REGISTER_HEAD,
   wireMessage, reasoningTextOf,
+  ORIENTATION_LABEL, ORIENTATION_END,
 } from '../index.js';
 
 const textOf = (m) => Array.isArray(m.content)
@@ -160,6 +161,49 @@ const toolResult = (id, t) => ({ role: 'tool', toolCallId: id, content: t });
   assert.ok(textOf(out[4]).startsWith(SEED), 'current-scope latest tool turn leads with seed');
   assert.ok(textOf(out[4]).includes(CONTINUE_WORK), 'current latest carries continue-work');
   assert.ok(textOf(out[4]).includes('Need current step.'), 'current latest keeps its own reasoning');
+}
+
+// 12. contentFillScope 'task' leaves prior-task history byte-stable and still fills
+// the current task's latest tool turn with the orientation block.
+{
+  const msgs = [
+    user('Need first task.'),
+    toolTurn('Need older history step.', 'c0'), toolResult('c0', 'ok0'),
+    user('Need continue.'),
+    toolTurn('Need current latest.', 'c1'), toolResult('c1', 'ok1'),
+  ];
+  const out = fillAssistantContent(msgs, 'seed-continue-reasoning', 3, { mode: 'full', scope: 'task' });
+  assert.equal(textOf(out[1]), '', 'prior-task history must stay empty (byte-stable prefix)');
+  const current = textOf(out[4]);
+  assert.ok(current.startsWith(`${ORIENTATION_LABEL}\n${SEED}`), 'current latest still leads with label+seed');
+  assert.ok(current.includes(ORIENTATION_END), 'current latest carries the example end boundary');
+  assert.ok(current.includes('Need current latest.'), 'current latest keeps its own reasoning');
+}
+
+// 13. contentFillScope 'latest' fills only the latest tool-call assistant, so even
+// older current-task turns stay byte-stable.
+{
+  const msgs = [
+    user('Need do work.'),
+    toolTurn('Need older current step.', 'c0'), toolResult('c0', 'ok0'),
+    toolTurn('Need latest current step.', 'c1'), toolResult('c1', 'ok1'),
+  ];
+  const out = fillAssistantContent(msgs, 'seed-continue-reasoning', 0, { mode: 'off', scope: 'latest' });
+  assert.equal(textOf(out[1]), '', 'older current-task turn must stay empty under latest scope');
+  const latest = textOf(out[3]);
+  assert.ok(latest.startsWith(SEED), 'latest turn receives seed');
+  assert.ok(latest.includes('Need latest current step.'), 'latest turn keeps its own reasoning');
+}
+
+// 14. default scope remains legacy 'all' when no scope is supplied.
+{
+  const msgs = [
+    user('Need first task.'),
+    toolTurn('Need history step.', 'c0'), toolResult('c0', 'ok0'),
+    user('Need continue.'),
+  ];
+  const out = fillAssistantContent(msgs, 'seed-continue-reasoning', 3);
+  assert.equal(textOf(out[1]), 'Need history step.', 'default keeps the legacy cross-boundary mirror');
 }
 
 console.log('content-fill: all assertions passed');

@@ -1,8 +1,8 @@
 {
   "name": "dsh-we-need-plugin",
-  "version": "4.4.1",
+  "version": "4.4.4",
   "type": "module",
-  "description": "稳定的 We Need 思维链，极大提升 DeepSeek V4.1 Flash 的能力。seed 使用 Kimi K3.1 Pro 原文决策轨迹；system 追加 WeNeed 推理规则；通用 content 填充把 seed+continue-work+reasoning 写进空 content（覆盖 user-task 与工具步），并把历史空 content 跨任务边界镜像上各自 reasoning、历史 reasoning 通道签名跨边界归一为 reasoning_content（中断/续作时保住前文可见语态与思考归属，避免重新推导已确认事实）；任务识别白名单（仅 user/goal/schedule/tool-goal 是任务，其它任何带 kind 的消息默认上下文），未来 DSH 新增工具/提醒种类不会再抢占 seed 锚点；Team 外发和压缩均使用 Need/Should/Could/Must/Let's 句式。支持标准模式 / goal 模式 / Team Agent 会话；Team 外发覆盖 teammate、sub-agent 与 workflow agent prompt。新增 seedOrientation 定向块（off/example/full，默认 full）：把 seed 标注为思维示例（冒号+换行、无引号），full 模式附上一步 reasoning、当前 todo 清单与 provider 实测上下文占用；reasoning 通道保持原文，关闭时与 4.3.2 字节一致。full 模式当前按 todo、上下文占用、标注+seed、上一步 reasoning、continue 的顺序组织，真实 task 紧贴 seed。DSH 插件 4.4.1。",
+  "description": "稳定的 We Need 思维链，极大提升 DeepSeek V4.1 Flash 的能力。seed 使用 Kimi K3.1 Pro 原文决策轨迹；system 追加 WeNeed 推理规则；通用 content 填充把 seed+continue-work+reasoning 写进空 content（覆盖 user-task 与工具步），并把历史空 content 跨任务边界镜像上各自 reasoning、历史 reasoning 通道签名跨边界归一为 reasoning_content（中断/续作时保住前文可见语态与思考归属，避免重新推导已确认事实）；任务识别白名单（仅 user/goal/schedule/tool-goal 是任务，其它任何带 kind 的消息默认上下文），未来 DSH 新增工具/提醒种类不会再抢占 seed 锚点；Team 外发和压缩均使用 Need/Should/Could/Must/Let's 句式。支持标准模式 / goal 模式 / Team Agent 会话；Team 外发覆盖 teammate、sub-agent 与 workflow agent prompt。新增 seedOrientation 定向块（off/example/full，默认 full）：把 seed 标注为思维示例（冒号+换行、无引号），full 模式附上一步 reasoning、当前 todo 清单与 provider 实测上下文占用；reasoning 通道保持原文，关闭时与 4.3.2 字节一致。full 模式当前按 todo、上下文占用、标注+seed、结束边界、上一步 reasoning、continue 的顺序组织，真实 task 紧贴 seed。4.4.3 新增：seed 示例结束边界，降低弱提示续作把示例误当成上一轮的风险；context/task 顺序对所有 task 组规范化，避免续作边界前缀翻转导致缓存命中骤降；contentFillScope（all/task/latest，bundle 默认 task）限制跨任务历史 content 回填，旧 task 历史保持字节稳定。DSH 插件 4.4.4。4.4.4 修复：任务开工后新追加的 context 不再前移，旧前缀冻结；只保留 task 开工前 context 的整理，Kimi seed 与 reasoning 接续机制不变。",
   "license": "MIT",
   "author": "DSH We Need Plugin contributors",
   "repository": {

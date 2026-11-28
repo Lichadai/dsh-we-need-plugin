@@ -1,5 +1,25 @@
 # Changelog
 
+## 4.4.4
+
+- **开工后冻结缓存前缀**：`orderContextsBeforeAllTasks` 改为 `orderContextsBeforeFirstResponse`。每个 task 段只把“task 之后、第一条 assistant/tool 之前”的初始 context 前移到 task 前；task 开工后新注入的 `time-context`、runtime context、进度提示等全部保持宿主追加位置，不再跨过 task。修复 4.4.3 在连续工具步中把新 context 前移、导致 task 之后整段历史失效的问题。
+- **根因证据**：最新 PTC 会话 step 11 宿主追加 `time-context`（`Elapsed since the preceding step context: 11m 8s.`），4.4.3 将其移到 task 前，task 后约 137k 历史右移；输入 154,132，`cacheRead` 仅 17,024，单步命中 11.05%。step 8/10 的低命中对应上一步 41.7k/31.1k 新输出，属于正常不可缓存成本。
+- **保留全部思维链承重件**：`seed.txt` 的 Kimi 原文不改；合成 seed 的 `content`/`reasoning_content` 仍为同一份全量块；`normalizeReasoningChannelMessages` 仍跨全部历史归一为 `reasoning_content`；`contentFillScope: task`、`toolStepSeedPlacement: assistant`、`toolStepReasoning: anchor-seed`、`toolStepReseed: true` 全部不变。
+- **测试**：新增 `tests/ordering-444.test.mjs`（step 11 late context / 续接旧前缀冻结 / 初始 context 前移 / compaction 边界 / seed 双通道）；原 13 套件 + 新套件共 14 套全绿。
+
+## 4.4.3
+
+- **续作前缀缓存修复**：新增 `orderContextsBeforeAllTasks`，对所有真实 task 组统一执行 context-before-task 排序。此前只把“最后一个 task 之后的 context”前移；续作出现新 task 后，旧 task 的 context 不再满足条件，host 持久化顺序翻转，首条续作请求只剩 system+tools 前缀可命中（实测只缓存 11,776 tokens，命中 20.0%/16.1%）。现在新旧 task 的前缀顺序一致。
+- **content 回填范围可配**：新增 `contentFillScope: all | task | latest`（bundle 默认 `task`）。`task` 只回填当前 task scope，旧 task 历史保持字节稳定；`latest` 只填空 content 的最新 tool-call assistant。`all` 保留 4.3.1 的跨边界镜像行为。
+- **seed 结束边界**：定向块在 raw seed 之后、上一步 reasoning/continue 之前增加 `Need end of style example...`。此前只有开头标注，弱提示续作会把 seed 的问候原文感知成“上一轮粘贴的奇怪 reasoning”；结束边界用于明确示例的闭合位置。
+- 新增 `ordering-443.test.mjs`，content-fill 增加 scope 用例；`seedOrientation: off` 仍保持 4.3.2 行为。12+1 套件全绿。
+
+## 4.4.2
+
+- **合成 seed assistant 双通道同文**：非 tool-call 的新任务 seed 现在让 `content` 与 `reasoning_content` 逐字承载同一份完整定向块（todo、上下文占用、标注+seed、上一轮 reasoning、continue），不再在 reasoning 通道单独追加裸 seed。
+- `isSeed` 增加 `weneed-seed-*` ID 识别，保证定向块改写后旧 seed 仍能在下一次请求前被替换，不会累积。
+- 工具步仍只在现有 tool-call assistant 内调整，不新增消息、不改 tool result、不拆 tool pair。
+
 ## 4.4.1
 
 - **full 模式顺序改为当前状态优先**：`todo → 上下文占用 → 标注 + raw seed → 上一步 reasoning → continue`，真实 task 紧贴 seed。首轮缺 todo/usage/previous 时仍退化为 `label + seed + continue`，缺省节省略、不编造。live PTC 同 prompt 对照（2 次旧顺序 + 2 次新顺序）：新顺序 12/12 请求合格，旧工具步 0/11 合格；仅单任务小样本，不写因果。

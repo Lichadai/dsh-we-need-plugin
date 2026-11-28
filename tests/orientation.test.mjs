@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {
   injectSeed, fillAssistantContent, hasSeedAfter, reasoningTextOf, wireMessage,
   SEED, buildOrientationSeedBlock, orientationFillHead, lastTodos, lastAssistantReasoning,
-  orientationMode, ORIENTATION_LABEL, ORIENTATION_CONTINUE, ORIENTATION_PREVIOUS_HEAD, ORIENTATION_TASKS_HEAD,
+  orientationMode, ORIENTATION_LABEL, ORIENTATION_END, ORIENTATION_CONTINUE, ORIENTATION_PREVIOUS_HEAD, ORIENTATION_TASKS_HEAD,
 } from '../index.js';
 
 const OPTIONS = { provider: 'opendesign', model: 'deepseek-v4.1-flash', maxTokens: 300000 };
@@ -41,7 +41,7 @@ function todoTurn(todos, reasoning = 'Need update the list.') {
   return { role: 'assistant', content, source: { kind: 'model', replayState: { response: { api: 'openai-completions' }, blocks } } };
 }
 const toolResult = (id, t) => ({ role: 'tool', toolCallId: id, content: t });
-const seedOf = (msgs) => msgs.find((m) => m?.role === 'assistant' && reasoningTextOf(m).trim() === SEED && !m.content.some((b) => b?.type === 'tool-call'));
+const seedOf = (msgs) => msgs.find((m) => m?.role === 'assistant' && String(m.id ?? '').startsWith('weneed-seed-'));
 const flags = (mode, usage) => ({ orientation: { mode, usage } });
 
 // 1. mode normalization
@@ -65,10 +65,12 @@ assert.equal(orientationMode('bogus'), 'off');
   const seed = seedOf(out.messages);
   const text = textOf(seed);
   assert.ok(text.startsWith(`${ORIENTATION_LABEL}\n${SEED}`), 'example leads with label colon newline then raw seed');
+  assert.ok(text.includes(ORIENTATION_END), 'example closes with an explicit end boundary');
+  assert.ok(text.indexOf(ORIENTATION_END) > text.indexOf(SEED), 'end boundary follows the raw seed');
   assert.ok(text.includes(ORIENTATION_CONTINUE), 'example carries continue line');
   assert.equal(text.includes(`"${SEED}"`), false, 'seed must NOT be wrapped in quotes');
   assert.equal(text.includes(ORIENTATION_PREVIOUS_HEAD), false, 'example has no previous-thinking section');
-  assert.equal(reasoningTextOf(seed).trim(), SEED, 'reasoning channel stays raw SEED');
+  assert.equal(reasoningTextOf(seed).trim(), text, 'reasoning channel mirrors the example block');
 }
 
 // 4. full mode with all data present
@@ -77,17 +79,21 @@ assert.equal(orientationMode('bogus'), 'off');
   const msgs = [user('Need first.'), plainTurn('Need inspect the inputs.'), todoTurn(todos), user('Need continue the fix.')];
   const usage = { pressureTokens: 48200, contextWindow: 262144 };
   const out = injectSeed(msgs, OPTIONS, MODEL, undefined, false, 'we-need', false, flags('full', usage));
-  const text = textOf(seedOf(out.messages));
+  const seed = seedOf(out.messages);
+  const text = textOf(seed);
+  assert.equal(reasoningTextOf(seed).trim(), text, 'reasoning channel mirrors the full current-state block');
   assert.ok(text.includes(`${ORIENTATION_PREVIOUS_HEAD}\nNeed update the list.`), 'full copies the latest assistant reasoning verbatim');
   assert.ok(text.includes(`${ORIENTATION_TASKS_HEAD}\n- [in_progress] Need fix colors\n- [pending] Need verify render`), 'full renders the current todo list');
   assert.ok(text.includes('48200 tokens of 262144 window (provider-measured)'), 'full carries measured context occupancy');
   const labelAt = text.indexOf(ORIENTATION_LABEL);
   const seedAt = text.indexOf(SEED);
+  const endAt = text.indexOf(ORIENTATION_END);
   const previousAt = text.indexOf(ORIENTATION_PREVIOUS_HEAD);
   assert.ok(text.indexOf(ORIENTATION_TASKS_HEAD) < labelAt, 'todo must precede the seed');
   assert.ok(text.indexOf('48200 tokens of 262144 window') < labelAt, 'usage must precede the seed');
   assert.ok(labelAt > 0 && seedAt > labelAt, 'labeled seed follows todo/usage');
-  assert.ok(previousAt > seedAt, 'previous thinking must follow the seed');
+  assert.ok(endAt > seedAt, 'end boundary follows the seed');
+  assert.ok(previousAt > endAt, 'previous thinking must follow the end boundary');
   assert.ok(text.indexOf(ORIENTATION_CONTINUE) > previousAt, 'continue stays last');
 }
 
@@ -95,7 +101,7 @@ assert.equal(orientationMode('bogus'), 'off');
 {
   const out = injectSeed([user('Need first task.')], OPTIONS, MODEL, undefined, false, 'we-need', false, flags('full', undefined));
   const text = textOf(seedOf(out.messages));
-  assert.equal(text, `${ORIENTATION_LABEL}\n${SEED}\n\n${ORIENTATION_CONTINUE}`, 'missing data sections are omitted, never invented');
+  assert.equal(text, `${ORIENTATION_LABEL}\n${SEED}\n\n${ORIENTATION_END}\n\n${ORIENTATION_CONTINUE}`, 'missing data sections are omitted, never invented');
 }
 
 // 6. full mode partial data: previous reasoning present, todos/usage absent
@@ -112,7 +118,7 @@ assert.equal(orientationMode('bogus'), 'off');
   const msgs = [user('Need first.'), plainTurn('Need plan.'), user('Need continue.')];
   const once = injectSeed(msgs, OPTIONS, MODEL, undefined, false, 'we-need', false, flags('full'));
   const twice = injectSeed(once.messages, OPTIONS, MODEL, undefined, false, 'we-need', false, flags('full'));
-  const seeds = twice.messages.filter((m) => m?.role === 'assistant' && reasoningTextOf(m).trim() === SEED && !m.content.some((b) => b?.type === 'tool-call'));
+  const seeds = twice.messages.filter((m) => m?.role === 'assistant' && String(m.id ?? '').startsWith('weneed-seed-'));
   assert.equal(seeds.length, 1, 'old orientation seed stripped, exactly one seed');
   assert.equal(textOf(seeds[0]), textOf(seedOf(once.messages)), 'orientation block is deterministic across re-injection');
   assert.equal(hasSeedAfter(twice.messages, 0), true, 'hasSeedAfter still detects the seed');
@@ -170,7 +176,7 @@ assert.equal(orientationMode('bogus'), 'off');
 // 13. orientation meta text carries no drift literals
 {
   const forbidden = [['L', 'e', 't', ' ', 'm', 'e'].join(''), ['I', ' ', 'will'].join(''), ['I', "'", 'll'].join(''), ['let', ' ', 'us'].join(''), ['let', 'me'].join('-')];
-  const meta = [ORIENTATION_LABEL, ORIENTATION_CONTINUE, ORIENTATION_PREVIOUS_HEAD, ORIENTATION_TASKS_HEAD, orientationFillHead()].join('\n');
+  const meta = [ORIENTATION_LABEL, ORIENTATION_END, ORIENTATION_CONTINUE, ORIENTATION_PREVIOUS_HEAD, ORIENTATION_TASKS_HEAD, orientationFillHead()].join('\n');
   for (const phrase of forbidden) {
     const pattern = new RegExp(`\\b${phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+')}\\b`, 'i');
     assert.equal(pattern.test(meta), false, `orientation meta must not contain ${phrase}`);

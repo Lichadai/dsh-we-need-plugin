@@ -1,14 +1,18 @@
 # DSH We Need Plugin
 
-> **4.4.1（当前发布）**：在 4.3.2 基础上新增 `seedOrientation` 定向块（`off | example | full`，发布 bundle 默认 `full`；设 `off` 可回到 4.3.2 行为）。`full` 的当前顺序为：
+> **4.4.4（当前发布）**：在 4.4.3 基础上修连续工具步的缓存前缀失效：
+>
+> 1. **开工后冻结前缀**：任务开工后宿主新注入的 `time-context`、runtime context、进度提示等保持原位，不再跨过 task 或最新 assistant 前移；只有 task 开工前的初始 context 仍整理到 task 前。这样普通工具步不再把旧前缀整体顶走。
+> 2. **保留 4.4.3 的续作修复**：`contentFillScope` 仍默认 `task`；旧 task 历史保持字节稳定；seed 结束边界继续保留。
+> 3. **思维链不动**：Kimi seed、`content`/`reasoning_content` 双通道、`normalizeReasoningChannelMessages`、工具步 seed 嵌入方式全部不变，只改 context 排序策略。
+>
+> `full` 的当前顺序为：
 >
 > ```text
-> todo → 上下文占用 → 标注 + raw seed → 上一步 reasoning → continue
+> todo → 上下文占用 → 标注 + raw seed → 结束边界 → 上一步 reasoning → continue
 > ```
 >
-> 真实 task 紧贴 seed。4.4.1 的 todo 源为“宿主当前投影优先 + 历史最近 todo_write 兜底”；首轮缺 todo/usage/previous 时退化为 `标注 + seed + continue`，缺省节省略、不编造。
->
-> 发布 bundle 默认 `full`，安装后直接启用当前状态优先顺序；可显式设 `off` 回到 4.3.2 行为。完整 A/B 尚未做，不声称已治愈所有漂移。
+> 真实 task 紧贴 seed。todo 源为“宿主当前投影优先 + 历史最近 todo_write 兜底”；首轮缺 todo/usage/previous 时仍省略、不编造。`seedOrientation` 仍为 `off | example | full`，发布 bundle 默认 `full`；设 `off` 可回到 4.3.2 行为。
 >
 > **4.3.0–4.3.2 保留**：白名单任务入口（未知 kind 默认上下文）、contentFill 跨边界镜像历史空 content、历史 reasoning 通道跨边界归一为 `reasoning_content`。当前 seed 为 raw Kimi 921（文件内容见 `seed.txt`，精确原文见文末）；历史段落中的 882 seed 已过时。
 >
@@ -22,9 +26,9 @@
 
 > 下文 3.0.0 说明仍适用于 seed 注入底座；3.2.0 实验配置与 A/B/C/D 说明保留作历史对照。
 
-> **适用于 DeepSeek V4.1 Flash（DSH 插件 4.4.1）。**
+> **适用于 DeepSeek V4.1 Flash（DSH 插件 4.4.4）。**
 >
-> 稳定的 We Need 思维链，极大提升 DeepSeek V4.1 Flash 的能力；仿 Kimi K3.1 Pro 的决策型 seed 把任务复述、约束、候选 A/B、风险检查、选定与收尾带到当前 task 紧前，减少无效思维，提升计划与执行质量。已核实支持 **标准模式**、**goal 模式**、**Team Agent 会话**、**Response API**（完整 live 验证待补）；其他模式未验证。Team 外发语态规则：`Need / Should / Could / Can / Must / May` + `We need / We should / We can / Let's` 自然分布。默认保留 tool-call assistant 的 content；模型匹配默认要求 `DeepSeek` 与 `Flash` 两个词（大小写不敏感）；seed 按 `seed.txt` 实际内容注入。下文旧版 `728/728`、`taskPolicy`、`registerGate`、`mirrorToolSteps` 等只作历史说明，不再代表 4.4.1 默认行为。
+> 稳定的 We Need 思维链，极大提升 DeepSeek V4.1 Flash 的能力；仿 Kimi K3.1 Pro 的决策型 seed 把任务复述、约束、候选 A/B、风险检查、选定与收尾带到当前 task 紧前，减少无效思维，提升计划与执行质量。已核实支持 **标准模式**、**goal 模式**、**Team Agent 会话**、**Response API**（完整 live 验证待补）；其他模式未验证。Team 外发语态规则：`Need / Should / Could / Can / Must / May` + `We need / We should / We can / Let's` 自然分布。默认保留 tool-call assistant 的 content；模型匹配默认要求 `DeepSeek` 与 `Flash` 两个词（大小写不敏感）；seed 按 `seed.txt` 实际内容注入。下文旧版 `728/728`、`taskPolicy`、`registerGate`、`mirrorToolSteps` 等只作历史说明，不再代表 4.4.4 默认行为。
 
 DeepSeek Harness（DSH）Host 插件：不改 tools、不改采样参数，只在每次模型生成前，把 **计划与上一轮思考结果** 放到离模型最近的位置；让 DeepSeek V4.1 Flash 的思维链一路顺承，稳定保持 `We need / Let's / We / Should`。
 

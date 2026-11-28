@@ -18,7 +18,9 @@
         sanitizeProgram: true
         nearestGuidance: both
         contentFill: seed-continue-reasoning
+        contentFillScope: task
         seedOrientation: full
+        toolStepSeedPlacement: assistant
         teamRegisterHint: true
         toolResultSeed: off
         toolDescriptionSeed: off

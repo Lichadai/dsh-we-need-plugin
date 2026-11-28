@@ -1,86 +1,61 @@
-# 4.4.1 发布说明（2026-11-24）
+# 4.4.4 发布说明（2026-11-28）
 
 ## 本版内容
 
-### 1. `seedOrientation` full 的模式内顺序
+### 1. 开工后冻结缓存前缀
 
-`full` 模式现在按“当前状态优先”组织定向块：
+4.4.3 的 `orderContextsBeforeAllTasks()` 会把每个 task 段内所有 context 前移到 task 前。它修好了续接首请求，但把任务开工后新追加的 `time-context`、runtime context、进度提示也前移了。
 
-```text
-todo
-上下文占用
-标注 + raw seed
-上一步 reasoning
-continue
-```
+真实会话 step 11：
 
-真实 task 紧贴 seed。首轮没有 todo、usage 或 previous 时，退化为：
+- 宿主追加 `time-context`：`Elapsed since the preceding step context: 11m 8s.`
+- 4.4.3 把它移到原 task 前。
+- task 及其后约 137k 历史整体右移。
+- 输入 154,132，`cacheRead` 仅 17,024，单步命中 11.05%。
 
-```text
-标注
-seed
-continue
-```
+4.4.4 改为 `orderContextsBeforeFirstResponse()`：
 
-缺省数据一律省略，不编造。`example` 模式仍只有标注 + seed + continue。关闭（`off`）时与 4.3.2 行为一致。
+- 每个 task 段只前移“task 之后、第一条 assistant/tool 之前”的初始 context。
+- 第一条 assistant/tool 之后的新 context 保持宿主追加位置。
+- seed 仍紧贴真实 task；compaction checkpoint 仍是硬边界。
+- 旧函数 `orderContextsBeforeAllTasks` 仅保留导出用于对照，不进入 live 请求路径。
 
-### 2. todo 源：投影优先 + 历史兜底
+### 2. 思维链承重件不动
 
-`full` 优先读宿主当前 `todos` 投影（`ctx.sessionProjections.stateOf(session, 'todos')`，工具步期间 populated、last-write-wins、抗压缩）；轮次开头投影清空时，退回历史最近一次 `todo_write` 的整表。审计增加 `orientationTodosSource: projection | history | none`。
+- `seed.txt` 的 Kimi 原文不改。
+- 合成 seed 的 `content` / `reasoning_content` 仍为同一份全量块。
+- `normalizeReasoningChannelMessages` 仍覆盖全部历史 assistant。
+- `contentFillScope: task`、`toolStepSeedPlacement: assistant`、`toolStepReasoning: anchor-seed`、`toolStepReseed: true` 不变。
+- 所有旧 assistant 的 reasoning 文本、tool call/result 配对、旧 task 内容均不改。
 
-### 3. 文档与元数据同步
+### 3. 测试与 live
 
-- `package.json` 版本和描述更新到 4.4.1；
-- `CHANGELOG.md` 补充顺序改动；
-- README 顶部更新到 4.4.1，并标注 882 seed 段落已过时；
-- locale 描述更新；
-- 发布树重新组装为完整仓库：运行文件 + `tests/` + `.github/workflows/release.yml` + `bin/` + `PUBLISHING.md`。
-
-## 默认值
-
-- 发布 bundle 默认 `seedOrientation: full`，安装后直接启用当前状态优先顺序；
-- 需要旧行为时可显式设 `off`；
-- 发布包和发布树不含 `wireDump`，不包含 live 取证配置；
-- 12 个 npm 打包文件，tests / CI / bin 只进仓库树，不进 tgz。
-
-## live 顺序实验（同一 prompt，2 次旧顺序 + 2 次新顺序）
-
-环境：DSH Desktop，PTC preset，provider/model `cyou/deepseek-v4.1-flash-1017`，effort `max`，同一最小 todo/read/write 任务。
-
-| 指标 | 旧顺序 | 新顺序 |
-|---|---:|---:|
-| wire 请求数 | 13 | 12 |
-| 目标顺序严格通过 | 2/13（仅首轮缺段） | **12/12** |
-| 工具步满足新顺序 | 0/11 | **10/10** |
-| seed 紧贴真实 task | 13/13 | **12/12** |
-| seed reasoning 为 920 字 raw | 13/13 | **12/12** |
-| tool-call / result 配对 | 13/13 | **12/12** |
-| 空 tool content | 0 | 0 |
-
-- 旧顺序：`label → seed → previous → todo → usage → continue`
-- 新顺序：`todo → usage → label → seed → previous → continue`
-- 首轮无 todo/usage/previous 时，四跑都退化为 `label + seed + continue`。
-- 四跑首条 reasoning 均以 `We need` 开头，任务结果均为 90，均无问候回声。
-- Let me：旧顺序 0 和 1（1.59/10k），新顺序 0 和 0。
-- 新顺序两跑的首次 reasoning 直接点名测试路径，旧顺序两跑没有。
-
-**边界**：只有 2+2 个单任务样本，不能据此宣布因果或广泛稳定性；完整 A/B（example/full、长任务、真实压缩、中断续作）尚未做。发布 bundle 与 live 验证配置一致，默认 `full`。
+- 新增 `tests/ordering-444.test.mjs`：
+  - step 11 式 late time-context 保持尾部；
+  - 续接时旧前缀冻结；
+  - 初始 context 仍前移；
+  - compaction 边界；
+  - seed 双通道与原文。
+- 原有 13 套件 + 新套件共 14 套全绿。
+- live 已安装并重启，audit `v=4.4.4`，`seedHash=70de6dc3b9446929` 未变。
+- live smoke `dsh-444-cache-01`：18 步、`letMe=0`、`iCount=1`、`result.md=175`，末步命中 99.21%。
 
 ## 产物指纹
 
-- `index.js`：87624 B，SHA-256 `e940530ee1c0b03d0e6db9b08910826578602454588966d6dd47ce9eba2c626e`
-- `dsh-we-need-plugin-4.4.1.tgz`：60259 B，12 文件
-  - SHA-256：`5c486dcb7f811b098389ed70efc102e558f765d0a2dea2eccb20f22909338f82`
-  - integrity：`sha512-Trc5cO0GMtG93HcXO2TH04csbrcDSzHbQpEfpDGM3A3bQJuLpAcLjjSvAHNHInEzjg2EBXEplTLUbE4+V2ymoA==`
-- 两次本地 `npm pack` 字节一致；测试 **12/12 套件全绿**。
+- `index.js`：94,251 B，SHA-256 `8a3f7403d47eb47734f2bdfee156969f575ab414d5897e62a186cd45b909fae4`
+- `dsh-we-need-plugin-4.4.4.tgz`：63,367 B，12 文件
+  - SHA-256：`8c3f9d447c098c04c21c6256198fca3802b6eb1f308b7480517d8045eb193ead`
+  - integrity：`sha512-j3aLQ9d1Nx3eq0ZATFlhQUxarut7zz2CwUfQGr3w5KjiVptKvNS7Na68t5YAi1RbBhmds/jl1D1C+uW7qXidjA==`
 
-## 安装
+## 回滚
 
-从 GitHub Release 下载 tgz，在 DSH 的插件安装界面选择本地文件，或在 profile 中把依赖指向该 tgz。不要把 tgz 解包后逐文件覆盖运行目录。
+- live 4.4.3 备份：`backups/live-4.4.3-before-4.4.4-20261128-1735/`
+- 旧源码：`releases/4.4.3-cache-order-20261128-src/`
+- 旧 tgz：`releases/local/dsh-we-need-plugin-4.4.3.tgz`
 
 ## 已知限制
 
-- 本版默认 `full`；如需回到 4.3.2 行为，可显式设 `seedOrientation: off`。
-- 小样本 live 对照只覆盖一个最小任务与一个 provider 路由。
-- 未做长任务、真实压缩、中断续作、Team/Image 场景的本版专项回归。
-- `full` 的 todo/usage 依赖宿主服务；取不到时按设计省略对应节，不会阻断注入。
+- 真实 4.4.4 会话 step 16 已触发 late `time-context`：输入 132,148，`cacheRead=118,144`，单步命中 89.40%，上一步前缀复用 98.5%；同一任务 4.4.3 step 11 为 17,024 / 154,132 = 11.05%。
+- 该会话累计命中 83.72%；按复用上一步完整输入的理论上限约 88.02%，差额来自 step 2 冷启动 0 命中、大输出和局部 provider 波动，不是 137k 前缀坍塌。
+- 大输出步骤的原始命中率仍会下降，这是输出首次进入下一步输入的正常成本，不应与本修复的异常前缀失效混为一谈。
+- live smoke 中带 `todo_write` 的工具步仍有局部前缀复用波动（未见 137k 级坍塌），本轮未把它归因或纳入修复范围。
